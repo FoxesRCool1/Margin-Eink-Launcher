@@ -17,10 +17,14 @@ object RoutineFile {
             "version" to jsonOf(VERSION),
             "items" to jsonArrayOf(
                 document.items.map { item ->
-                    JsonObject.of(
-                        "id" to jsonOf(item.id),
-                        "label" to jsonOf(item.label),
-                        "target" to jsonOf(item.target),
+                    JsonObject(
+                        buildMap {
+                            put("id", jsonOf(item.id))
+                            put("label", jsonOf(item.label))
+                            put("target", jsonOf(item.target))
+                            // Left out for Any Time, so an old file is written back as it was.
+                            if (item.part != PartOfDay.AnyTime) put("part", jsonOf(item.part.key))
+                        },
                     )
                 },
             ),
@@ -38,7 +42,12 @@ object RoutineFile {
                 val id = entry.string("id")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val label = entry.string("label")?.takeIf { it.isNotBlank() }
                     ?: return@mapNotNull null
-                RoutineItem(id = id, label = label, target = entry.string("target").orEmpty())
+                RoutineItem(
+                    id = id,
+                    label = label,
+                    target = entry.string("target").orEmpty(),
+                    part = PartOfDay.fromKey(entry.string("part")),
+                )
             }
             ?.distinctBy { it.id }
             ?: emptyList()

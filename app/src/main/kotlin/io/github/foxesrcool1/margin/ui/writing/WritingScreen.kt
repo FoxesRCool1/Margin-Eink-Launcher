@@ -68,6 +68,8 @@ fun WritingScreen(
     onOpenNote: (String) -> Unit,
     modifier: Modifier = Modifier,
     newNoteRequests: Int = 0,
+    /** True once for each request. The tab is opened again later without a new request. */
+    takeNewNoteRequest: () -> Boolean = { false },
     onOpenInkNote: (path: String, title: String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
@@ -93,8 +95,16 @@ fun WritingScreen(
         rows = withContext(AppDispatchers.io) { notes.list(folder) }
     }
 
+    // A request is taken once. This runs again with every new composition of
+    // the tab, and an old request must not open the dialog a second time.
     LaunchedEffect(newNoteRequests) {
-        if (newNoteRequests > 0) addingNote = true
+        if (takeNewNoteRequest()) addingNote = true
+    }
+
+    // Coming back from a note has to show its new title and preview.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        refresh++
+        onPauseOrDispose { }
     }
 
     fun openNewNote(title: String) {

@@ -49,23 +49,32 @@ class NotesRepository(private val data: DataRepository) {
      * was a second trip to the disk for each note and a second repaint of
      * each row.
      */
-    fun list(folderPath: String): List<NoteEntry> =
-        data.store.list(folderPath).map { stored ->
-            when {
-                stored.isDirectory -> NoteEntry(stored, stored.name)
-                StorageLayout.isTypedNote(stored.name) -> {
-                    val text = data.store.readText(stored.relativePath).orEmpty()
-                    NoteEntry(
-                        stored = stored,
-                        title = NoteText.titleFrom(text, stored.name.substringBeforeLast('.')),
-                        preview = NoteText.preview(text),
-                    )
-                }
-                // A handwritten note has no text to take a title from.
-                StorageLayout.isInkNote(stored.name) -> NoteEntry(stored, stored.name.substringBeforeLast('.'))
-                else -> NoteEntry(stored, stored.name)
-            }
+    fun list(folderPath: String): List<NoteEntry> = data.store.list(folderPath).map(::describe)
+
+    private fun describe(stored: StoredEntry): NoteEntry = when {
+        stored.isDirectory -> NoteEntry(stored, stored.name)
+        StorageLayout.isTypedNote(stored.name) -> {
+            val text = data.store.readText(stored.relativePath).orEmpty()
+            NoteEntry(
+                stored = stored,
+                title = NoteText.titleFrom(text, stored.name.substringBeforeLast('.')),
+                preview = NoteText.preview(text),
+            )
         }
+        // A handwritten note has no text to take a title from.
+        StorageLayout.isInkNote(stored.name) -> NoteEntry(stored, stored.name.substringBeforeLast('.'))
+        else -> NoteEntry(stored, stored.name)
+    }
+
+    /**
+     * The typed or handwritten note that was changed last, in any folder, or
+     * null when there is none. Home offers it as a way back to the writing.
+     */
+    fun newest(): NoteEntry? =
+        data.store.listFilesRecursively(rootPath)
+            .filter { StorageLayout.isTypedNote(it.name) || StorageLayout.isInkNote(it.name) }
+            .maxByOrNull { it.lastModified }
+            ?.let(::describe)
 
     fun read(path: String): String = data.store.readText(path).orEmpty()
 

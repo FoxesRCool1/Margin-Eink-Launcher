@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
@@ -28,9 +29,13 @@ import io.github.foxesrcool1.margin.design.icons.Lucide
 /**
  * One item in the routine.
  *
- * A tap ticks it off. The order is changed with two arrows rather than by
+ * A tap ticks it off. A hold opens its options: the part of the day, and
+ * taking it off the list. The order is changed with two arrows rather than by
  * dragging: a drag needs a moving picture under the finger, and rule 1 has no
  * exceptions.
+ *
+ * The part of the day has no button of its own. A half of the split screen
+ * is 320 dp wide, and the name, the dot and the two arrows already fill it.
  */
 @Composable
 fun RoutineRow(
@@ -39,10 +44,10 @@ fun RoutineRow(
     isLast: Boolean,
     onToggle: () -> Unit,
     onMove: (Int) -> Unit,
-    onRemove: () -> Unit,
+    onOptions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    EinkRow(onClick = onToggle, onLongClick = onRemove, modifier = modifier) { pressed ->
+    EinkRow(onClick = onToggle, onLongClick = onOptions, modifier = modifier) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
 
@@ -88,9 +93,14 @@ fun RoutineRow(
             }
         }
 
-        if (status.item.target.isNotBlank()) {
+        // Any Time says nothing. The other parts of the day show by name.
+        val details = listOfNotNull(
+            status.item.part.takeIf { it != PartOfDay.AnyTime }?.title,
+            status.item.target.takeIf { it.isNotBlank() }?.let { "Opens $it" },
+        )
+        if (details.isNotEmpty()) {
             CapsLabel(
-                text = "Opens ${status.item.target}",
+                text = details.joinToString("  .  "),
                 style = EinkType.capsSmall.copy(color = faded),
                 maxLines = 1,
             )

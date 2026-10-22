@@ -4,6 +4,64 @@ One section per step. Newest step at the top.
 
 ---
 
+## Home: a big clock, Continue, and parts of the day
+
+Date: 2026-10-22. Branch `Dev`. Decision 0024.
+
+### What was done
+
+1. **A big clock** on Home in the display serif, with the date under it. 12
+   hour time shows a small AM or PM on the line of the digits. A narrow or
+   short half of the split screen gets a smaller clock and no plant.
+2. **A Continue row** under the clock: the book read last or the note edited
+   last. One tap opens it through the page opener. A book shows its percent.
+   It is read in the background when Home comes back, and the old value stays
+   until the new one arrives. With nothing to continue the row is left out.
+3. **Landscape has two columns.** The clock, Continue and Next on the left.
+   The four icons two by two on the right. The four icons are smaller
+   (at most 120 dp) in every layout.
+4. **Parts of the day for routine items**: Any Time, Morning, Afternoon,
+   Evening. Home offers the first undone item whose part has begun, and reads
+   the routine again each hour. In the Journal, a long press on a routine
+   item opens its options: the part of the day, and Remove. Removing used to
+   happen at once on a long press, and now it is one of the options.
+5. **Two bugs.** After one Ctrl+N the new note box opened every time the
+   Writing tab was opened. The request is taken once now. The Writing tab also
+   reads its list again when the user comes back from a note, so a changed
+   title or preview is not stale.
+6. The routine rows in the Journal were 86 dp tall, which cut the bottom half
+   off the small line under the name. They are 96 dp now.
+
+### What does not work, or is not checked
+
+- The screenshot tests cannot show the line spacing of the clock: Robolectric
+  ignores `lineHeight`, so the clock leaves the font's own line height alone
+  and trims the empty space with a layout. How the spacing looks on the real
+  panel is the first thing to check.
+- The Bodoni Moda digits are set as all one width (`tnum`). If the font has no
+  such feature the clock moves a few pixels when the digits change. That is
+  harmless, and the owner can say if it bothers.
+
+### Device test list for the owner
+
+1. Look at Home upright. The time should be large and in the middle, the date
+   under it, and nothing should touch the plant in the top corner. Try 12 hour
+   time (tablet date and time settings) and look for AM or PM beside the digits.
+2. Read a few pages of a book, press Home. A Continue row with the book and its
+   percent should be there. Press it. The book should open.
+3. Write a note, press Home. The row should show the note. Press it.
+4. In the Journal, open Routine. Hold a routine item. Choose Evening. The row
+   should show EVENING. Go Home before 17:00: that item must not be offered
+   until the evening. It should read "This Evening" then.
+5. Turn the tablet on its side. Two columns: clock and Continue on the left,
+   the four icons on the right. The bottom bar must be whole.
+6. Open the split screen with Home in one half. Check both a half that is wide
+   and short and one that is narrow and tall.
+7. With a keyboard: press Ctrl+N once, make a note, come back, then open the
+   Write tab. The new note box must not open again.
+
+---
+
 ## A pass over the app: bugs and small improvements
 
 Date: 2026-09-23. Branch `Dev`. The owner asked for a pass over the whole

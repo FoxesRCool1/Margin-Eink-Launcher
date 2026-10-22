@@ -27,6 +27,10 @@ import io.github.foxesrcool1.margin.core.log.LogLevel
 import io.github.foxesrcool1.margin.core.log.LogLine
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
+import io.github.foxesrcool1.margin.core.reading.BookAnnotations
+import io.github.foxesrcool1.margin.core.reading.ReadingRepository
+import io.github.foxesrcool1.margin.core.routine.PartOfDay
+import io.github.foxesrcool1.margin.core.routine.RoutineRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
@@ -37,6 +41,8 @@ import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.support.captureTo
 import io.github.foxesrcool1.margin.ui.apps.AppsScreen
 import io.github.foxesrcool1.margin.ui.apps.LauncherEntry
+import io.github.foxesrcool1.margin.ui.home.ContinueFinder
+import io.github.foxesrcool1.margin.ui.home.ContinueTarget
 import io.github.foxesrcool1.margin.ui.home.HomeScreen
 import io.github.foxesrcool1.margin.ui.ink.InkNoteController
 import io.github.foxesrcool1.margin.ui.ink.InkNoteScreen
@@ -140,26 +146,92 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     // -- Home -------------------------------------------------------------------------
 
+    /** A book that was read a little way and a note written after it: the Continue row finds the note. */
+    private fun seedContinue(bookLast: Boolean = true) {
+        val data = DataRoot.repository(context)
+        val bookId = StorageLayout.bookIdFor("Middlemarch.pdf", 2048)
+        data.store.write(StorageLayout.bookPath("Middlemarch.pdf"), ByteArray(2048))
+        ReadingRepository(data).save(bookId, BookAnnotations(progress = 0.12))
+        val notes = NotesRepository(data)
+        val path = notes.createNote(notes.rootPath, "Notes on the second chapter")!!
+        notes.write(path, "# Notes on the second chapter\n\nDorothea and the plans for the cottages.")
+        // Set the order by hand: both files were made in the same second.
+        val root = java.io.File(data.store.displayPath)
+        java.io.File(root, path).setLastModified(1_000_000_000_000L + if (bookLast) 0L else 60_000L)
+        java.io.File(root, StorageLayout.annotationsPath(bookId))
+            .setLastModified(1_000_000_000_000L + if (bookLast) 60_000L else 0L)
+    }
+
+    private fun continueTarget(): ContinueTarget? = ContinueFinder(DataRoot.repository(context)).find()
+
     @Test
     fun home() {
         compose.setContent {
             EinkTheme {
-                HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, battery = 82, wifi = true)
+                HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, use24Hour = true, battery = 82, wifi = true)
             }
         }
         capture("home")
     }
 
-    /** The tightest case: the Next line takes room away from the four icons, and the names are on. */
+    /** The whole home screen: Continue with a book and its percent, a Next line for the evening, 12 hour time. */
+    @Test
+    fun homeWithContinueBookAndNext() {
+        seedContinue()
+        val target = continueTarget()
+        compose.setContent {
+            EinkTheme {
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = {},
+                    nextRoutineLabel = "Write the journal",
+                    nextRoutinePart = PartOfDay.Evening,
+                    continueTarget = target,
+                    now = LocalDateTime.of(2026, 9, 19, 20, 59),
+                    use24Hour = false,
+                    battery = 82,
+                    wifi = true,
+                )
+            }
+        }
+        capture("home_continue_book")
+    }
+
+    /** A note to continue (no percent) with a long title, 24 hour time. */
+    @Test
+    fun homeWithContinueNote() {
+        seedContinue(bookLast = false)
+        val target = continueTarget()
+        compose.setContent {
+            EinkTheme {
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = {},
+                    continueTarget = target,
+                    now = LocalDateTime.of(2026, 9, 19, 12, 30),
+                    use24Hour = true,
+                    battery = 64,
+                    wifi = true,
+                )
+            }
+        }
+        capture("home_continue_note")
+    }
+
+    /** The tightest case: Continue and Next both take room from the four icons, and the names are on. */
     @Test
     fun homeWithNextLineAndNames() {
+        seedContinue()
+        val target = continueTarget()
         compose.setContent {
             EinkTheme {
                 HomeScreen(
                     onOpenTab = {},
                     onOpenSettings = {},
                     nextRoutineLabel = "Read 30 minutes",
+                    continueTarget = target,
                     now = fixedTime,
+                    use24Hour = false,
                     battery = 9,
                     wifi = false,
                     showLabels = true,
@@ -171,9 +243,21 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     @Test
     fun homeWithoutPlants() {
+        seedContinue()
+        val target = continueTarget()
         compose.setContent {
             EinkTheme(botanicalArt = false) {
-                HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, battery = 50, wifi = true)
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = {},
+                    nextRoutineLabel = "Stretch",
+                    nextRoutinePart = PartOfDay.Morning,
+                    continueTarget = target,
+                    now = fixedTime,
+                    use24Hour = true,
+                    battery = 50,
+                    wifi = true,
+                )
             }
         }
         capture("home_no_art")
@@ -218,6 +302,45 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
         waitForText("Walk outside")
         capture("journal_day")
+    }
+
+    /** The routine page, with a part of the day on some of the items. */
+    @Test
+    fun journalRoutine() {
+        seedJournal()
+        val routine = RoutineRepository(DataRoot.repository(context))
+        routine.add("Plan the day", "journal")
+        routine.add("Read 30 minutes", "read")
+        routine.add("Stretch")
+        routine.add("Write the journal", "journal")
+        routine.setPart("plan-the-day", PartOfDay.Morning)
+        routine.setPart("read-30-minutes", PartOfDay.Afternoon)
+        routine.setPart("write-the-journal", PartOfDay.Evening)
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Walk outside")
+        compose.onNodeWithContentDescription("Routine").performClick()
+        waitForText("Plan the day")
+        capture("journal_routine")
+    }
+
+    /** The options of a routine item, held down. The longest list in the Journal. */
+    @Test
+    fun journalRoutineOptionsDialog() {
+        compose.setContent {
+            EinkTheme {
+                Box(modifier = Modifier.fillMaxSize().background(EinkColors.Paper).padding(16.dp)) {
+                    OptionsDialogContent(
+                        title = "Write the journal",
+                        options = PartOfDay.entries.map { part ->
+                            DialogOption(label = part.title, icon = if (part == PartOfDay.Evening) Lucide.Check else null) {}
+                        } + DialogOption(label = "Remove", icon = Lucide.Trash2) {},
+                        onDismiss = {},
+                        modifier = Modifier.widthIn(max = 440.dp),
+                    )
+                }
+            }
+        }
+        capture("journal_routine_options")
     }
 
     @Test
@@ -579,8 +702,22 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     }
 
     @Test
-    fun splitHomeAndTheChoice() = split(PanePage.Choose, "split_home_choice") {
-        HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, battery = 72, wifi = true)
+    fun splitHomeAndTheChoice() {
+        seedContinue()
+        val target = continueTarget()
+        split(PanePage.Choose, "split_home_choice") {
+            HomeScreen(
+                onOpenTab = {},
+                onOpenSettings = {},
+                nextRoutineLabel = "Write the journal",
+                nextRoutinePart = PartOfDay.Evening,
+                continueTarget = target,
+                now = LocalDateTime.of(2026, 9, 19, 20, 59),
+                use24Hour = false,
+                battery = 72,
+                wifi = true,
+            )
+        }
     }
 
     @Test

@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,16 +24,21 @@ import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
+import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
+import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkTheme
 import io.github.foxesrcool1.margin.ui.apps.AppsScreen
+import io.github.foxesrcool1.margin.ui.home.ContinueFinder
+import io.github.foxesrcool1.margin.ui.home.ContinueTarget
 import io.github.foxesrcool1.margin.ui.home.LauncherRoute
 import io.github.foxesrcool1.margin.ui.home.HomeScreen
+import io.github.foxesrcool1.margin.ui.home.rememberMinuteClock
 import io.github.foxesrcool1.margin.ui.journal.JournalScreen
 import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
 import io.github.foxesrcool1.margin.ui.ink.InkCanvasView
@@ -51,9 +57,11 @@ import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitState
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
+import io.github.foxesrcool1.margin.ui.split.rememberPageOpener
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
 import io.github.foxesrcool1.margin.ui.update.UpdateScreen
 import kotlinx.coroutines.launch
+import java.time.LocalDateTime
 
 private const val TAG = "HomeActivity"
 
@@ -77,6 +85,9 @@ class HomeActivity : ComponentActivity() {
 
     /** Ctrl+N on a Bluetooth keyboard bumps this, and the Writing tab notices. */
     private val newNoteRequests = mutableIntStateOf(0)
+
+    /** True from Ctrl+N until the Writing tab takes the request, so it is acted on once. */
+    private var newNoteWanted = false
 
     private var startLogged = false
 
@@ -146,6 +157,7 @@ class HomeActivity : ComponentActivity() {
                                 onQuickNote = { quickNote() },
                                 onBackAtHome = split::close,
                                 newNoteRequests = newNoteRequests.intValue,
+                                takeNewNoteRequest = { newNoteWanted.also { newNoteWanted = false } },
                                 takeRouteChangedAt = {
                                     routeChangedAt.also { routeChangedAt = 0L }
                                 },
@@ -208,6 +220,7 @@ class HomeActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_N && event?.isCtrlPressed == true) {
             route.value = LauncherRoute.Writing
             split.mainChanged()
+            newNoteWanted = true
             newNoteRequests.intValue++
             return true
         }
@@ -256,37 +269,41 @@ private fun LauncherHost(
     /** Back on Home itself. Home has nothing behind it, so this only closes the split screen. */
     onBackAtHome: () -> Unit,
     newNoteRequests: Int,
+    /** True once for each Ctrl+N. A tab opened later does not see an old request. */
+    takeNewNoteRequest: () -> Boolean,
     /** When the user asked for the tab on show, once, and then 0. 0 when the app changed it, not the user. */
     takeRouteChangedAt: () -> Long = { 0L },
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var next by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf<RoutineStatus?>(null)
-    }
+    val opener = rememberPageOpener()
+    var next by remember { mutableStateOf<RoutineStatus?>(null) }
+    // The book or the note to go back to. The old one stays on show until the
+    // new one has been read, so the row never goes blank and fills in again.
+    var continueTarget by remember { mutableStateOf<ContinueTarget?>(null) }
 
-    // The next routine item is read again every time Home comes back, so
-    // ticking something off in the Journal shows up here at once. It is also
-    // read again when the tablet wakes up on Home: a new day has a new list,
-    // and the home screen is where a tablet spends the night.
-    var wakeUps by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // Home is read again every time it comes back, so ticking something off
+    // in the Journal, or reading a few pages, shows up here at once. It is
+    // also read again when the tablet wakes up on Home: a new day has a new
+    // list, and the home screen is where a tablet spends the night. And it is
+    // read again each hour, because a part of the day starts on the hour and
+    // an Evening item has to turn up in the evening with nobody touching it.
+    var wakeUps by remember { mutableIntStateOf(0) }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         wakeUps++
         onPauseOrDispose { }
     }
-    LaunchedEffect(route, wakeUps) {
+    val minuteClock = rememberMinuteClock()
+    val hour by remember { derivedStateOf { minuteClock.value.hour } }
+    LaunchedEffect(route, wakeUps, hour) {
         if (route != LauncherRoute.Home) return@LaunchedEffect
-        next = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
-            runCatching {
-                val data = DataRoot.repository(context)
-                val hour = HabitsRepository(data).load().dayBoundaryHour
-                val today = DayBoundary(hour).dateOf(
-                    java.time.Instant.now(),
-                    java.time.ZoneId.systemDefault(),
-                )
-                RoutineRepository(data).next(today)
-            }.getOrNull()
+        val loaded = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
+            val data = DataRoot.repository(context)
+            runCatching { nextRoutine(data) }.getOrNull() to
+                runCatching { ContinueFinder(data).find() }.getOrNull()
         }
+        next = loaded.first
+        continueTarget = loaded.second
     }
 
     val homeLabels by remember(context) { SettingsStore(context).homeLabels }
@@ -343,6 +360,15 @@ private fun LauncherHost(
             onOpenSettings = { onRoute(LauncherRoute.Settings) },
             onQuickNote = onQuickNote,
             nextRoutineLabel = next?.item?.label,
+            nextRoutinePart = next?.item?.part ?: PartOfDay.AnyTime,
+            continueTarget = continueTarget,
+            onContinue = { target ->
+                when (target) {
+                    is ContinueTarget.Book -> opener.openBook(target.book)
+                    is ContinueTarget.TypedNote -> opener.openTypedNote(target.path)
+                    is ContinueTarget.InkNote -> opener.openInkNote(target.path, target.title)
+                }
+            },
             onStartNext = {
                 val item = next?.item ?: return@HomeScreen
                 val tab = when (item.target) {
@@ -360,17 +386,8 @@ private fun LauncherHost(
                     // off, so Start marks it done and moves to the next one.
                     else -> scope.launch {
                         val done = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
-                            runCatching {
-                                val data = DataRoot.repository(context)
-                                val hour = HabitsRepository(data).load().dayBoundaryHour
-                                val today = DayBoundary(hour).dateOf(
-                                    java.time.Instant.now(),
-                                    java.time.ZoneId.systemDefault(),
-                                )
-                                val routine = RoutineRepository(data)
-                                routine.toggle(item.id, today)
-                                routine.next(today)
-                            }.onFailure { AppLog.e(TAG, "Could not mark the routine item ${item.id} done", it) }
+                            runCatching { nextRoutine(DataRoot.repository(context), tickOff = item.id) }
+                                .onFailure { AppLog.e(TAG, "Could not mark the routine item ${item.id} done", it) }
                         }
                         // A failure leaves the card as it was.
                         done.onSuccess { next = it }
@@ -387,6 +404,7 @@ private fun LauncherHost(
             onBack = { onRoute(LauncherRoute.Home) },
             onOpenNote = onOpenNote,
             newNoteRequests = newNoteRequests,
+            takeNewNoteRequest = takeNewNoteRequest,
             onOpenInkNote = onOpenInkNote,
         )
 
@@ -420,6 +438,19 @@ private fun LauncherHost(
             onBack = { onRoute(route.parent) },
         )
     }
+}
+
+/**
+ * The routine item Home offers right now, read from disk. [tickOff] ticks that
+ * item off first, for an item with nothing to open.
+ */
+private fun nextRoutine(data: DataRepository, tickOff: String? = null): RoutineStatus? {
+    val hour = HabitsRepository(data).load().dayBoundaryHour
+    val now = LocalDateTime.now()
+    val today = DayBoundary(hour).dateOf(now)
+    val routine = RoutineRepository(data)
+    if (tickOff != null) routine.toggle(tickOff, today)
+    return routine.next(today, now.toLocalTime(), hour)
 }
 
 /** Starts another app from a routine item. */

@@ -11,11 +11,14 @@ package io.github.foxesrcool1.margin.core.routine
  * - `""` for an item with nothing to open. The user just ticks it off.
  * - `read`, `write`, `journal`, `apps` for a tab in this app.
  * - `app:<package>/<class>` for another app on the tablet.
+ *
+ * [part] says when in the day Home starts offering the item.
  */
 data class RoutineItem(
     val id: String,
     val label: String,
     val target: String = "",
+    val part: PartOfDay = PartOfDay.AnyTime,
 ) {
     val opensATab: Boolean get() = target in TAB_TARGETS
 

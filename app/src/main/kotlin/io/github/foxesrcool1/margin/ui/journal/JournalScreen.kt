@@ -30,6 +30,7 @@ import io.github.foxesrcool1.margin.core.habits.HabitSummary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
+import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.core.storage.DataRoot
@@ -124,6 +125,7 @@ fun JournalScreen(
     var optionsFor by remember { mutableStateOf<HabitSummary?>(null) }
     var addingHabit by remember { mutableStateOf(false) }
     var addingRoutineItem by remember { mutableStateOf(false) }
+    var routineOptionsFor by remember { mutableStateOf<RoutineStatus?>(null) }
     var renaming by remember { mutableStateOf<HabitSummary?>(null) }
 
     LaunchedEffect(viewDate, refresh) {
@@ -315,12 +317,7 @@ fun JournalScreen(
                             refresh++
                         }
                     },
-                    onRemove = {
-                        scope.launch {
-                            withContext(AppDispatchers.io) { routine.remove(status.item.id) }
-                            refresh++
-                        }
-                    },
+                    onOptions = { routineOptionsFor = status },
                 )
             }
 
@@ -447,6 +444,32 @@ fun JournalScreen(
         )
     }
 
+    val routineItem = routineOptionsFor?.item
+    if (routineItem != null) {
+        OptionsDialog(
+            title = routineItem.label,
+            onDismiss = { routineOptionsFor = null },
+            options = PartOfDay.entries.map { part ->
+                DialogOption(
+                    label = part.title,
+                    icon = if (part == routineItem.part) Lucide.Check else null,
+                ) {
+                    scope.launch {
+                        withContext(AppDispatchers.io) { routine.setPart(routineItem.id, part) }
+                        refresh++
+                    }
+                    routineOptionsFor = null
+                }
+            } + DialogOption(label = "Remove", icon = Lucide.Trash2) {
+                scope.launch {
+                    withContext(AppDispatchers.io) { routine.remove(routineItem.id) }
+                    refresh++
+                }
+                routineOptionsFor = null
+            },
+        )
+    }
+
     if (addingRoutineItem) {
         TextPromptDialog(
             title = "New routine item",
@@ -508,8 +531,12 @@ private data class LoadedDay(
 /** A habit row: the name, the dots under it, and the rule. */
 private val HabitRowHeight = 74.dp
 
-/** A routine row: the name, where it leads, the two arrows, and the rule. */
-private val RoutineRowHeight = 86.dp
+/**
+ * A routine row: the name and the two arrows, the part of the day and where it
+ * leads under them, and the rule. At 86 dp the small line under the name lost
+ * its bottom half.
+ */
+private val RoutineRowHeight = 96.dp
 
 /**
  * The written entry of one day.

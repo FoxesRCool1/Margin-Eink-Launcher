@@ -5,7 +5,9 @@ import io.github.foxesrcool1.margin.core.habits.HabitMark
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
+import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import java.time.LocalDate
+import java.time.LocalTime
 
 private const val TAG = "RoutineRepository"
 
@@ -56,6 +58,14 @@ class RoutineRepository(private val data: DataRepository) {
         next
     }
 
+    /** Sets the part of the day of one item. An id that is not there changes nothing. */
+    fun setPart(id: String, part: PartOfDay): RoutineDocument = synchronized(LOCK) {
+        val current = load()
+        val next = RoutineDocument(current.items.map { if (it.id == id) it.copy(part = part) else it })
+        if (next != current) save(next)
+        next
+    }
+
     fun remove(id: String): RoutineDocument = synchronized(LOCK) { load().without(id).also { save(it) } }
 
     fun move(id: String, by: Int): RoutineDocument = synchronized(LOCK) { load().move(id, by).also { save(it) } }
@@ -85,12 +95,14 @@ class RoutineRepository(private val data: DataRepository) {
     }
 
     /**
-     * The next thing to do today, or null when the day is finished.
+     * The next thing to do today, or null when there is nothing on offer.
      *
-     * "Next" is the first item in the user's own order that is not ticked off.
-     * Not the nearest in time, and not the one the app thinks is important.
-     * The order is the user's plan for the day.
+     * "Next" is the first item in the user's own order that is not ticked off
+     * and whose part of the day has begun at [now]. Not the nearest in time,
+     * and not the one the app thinks is important. The order is the user's
+     * plan for the day. An item of an earlier part of the day that is still
+     * undone stays on offer; one of a later part waits for its time.
      */
-    fun next(date: LocalDate): RoutineStatus? =
-        statuses(date).firstOrNull { !it.doneToday }
+    fun next(date: LocalDate, now: LocalTime, boundaryHour: Int = DayBoundary.DEFAULT_HOUR): RoutineStatus? =
+        statuses(date).firstOrNull { !it.doneToday && it.item.part.hasStarted(now, boundaryHour) }
 }
