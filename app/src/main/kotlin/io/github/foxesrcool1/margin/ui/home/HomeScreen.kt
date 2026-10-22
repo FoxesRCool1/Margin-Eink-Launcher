@@ -200,9 +200,9 @@ fun HomeScreen(
                 // The routine line takes the whole width under both columns, as
                 // it does upright, so its button stands at the right edge, over
                 // the controls, and not in the middle of the screen.
-                if (nextRoutineLabel != null) {
+                if (nextRoutineLabel != null || !compact) {
                     Spacer(modifier = Modifier.height(gap))
-                    next()
+                    NextSlot(compact) { next() }
                     Spacer(modifier = Modifier.height(4.dp))
                 }
             } else {
@@ -220,8 +220,8 @@ fun HomeScreen(
                     onOpenTab = onOpenTab,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
-                if (nextRoutineLabel != null) {
-                    next()
+                if (nextRoutineLabel != null || !compact) {
+                    NextSlot(compact) { next() }
                     Spacer(modifier = Modifier.height(EinkDimens.targetGap))
                 }
             }
@@ -367,6 +367,22 @@ private fun ContinueRow(
 }
 
 /** The next routine item, with a button that starts it, or ticks it off when there is nothing to start. */
+/**
+ * Where the routine line goes. Outside a small half it keeps its room when
+ * there is no line, so the icons above do not move when an item comes or is
+ * ticked off: on e-ink a jump of the four icons is a repaint of half the
+ * screen, and an empty strip is none.
+ */
+@Composable
+private fun NextSlot(compact: Boolean, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (compact) Modifier else Modifier.heightIn(min = EinkDimens.touchTarget)),
+        contentAlignment = Alignment.CenterStart,
+    ) { content() }
+}
+
 @Composable
 private fun NextRow(
     label: String,
