@@ -45,6 +45,21 @@ class NotesRepositoryTest {
     }
 
     @Test
+    fun `a note that got a number in its name has the number in its heading`() {
+        val first = notes.createNote(notes.rootPath, "groceries")!!
+        val second = notes.createNote(notes.rootPath, "groceries")!!
+        val third = notes.createNote(notes.rootPath, "groceries")!!
+        assertEquals("notes/groceries 2.md", second)
+        assertEquals("# groceries\n\n", notes.read(first))
+        assertEquals("# groceries 2\n\n", notes.read(second))
+        assertEquals("# groceries 3\n\n", notes.read(third))
+        assertEquals(
+            listOf("groceries", "groceries 2", "groceries 3"),
+            notes.list(notes.rootPath).map { it.title }.sorted(),
+        )
+    }
+
+    @Test
     fun `a title a file system would refuse is cleaned up`() {
         val path = notes.createNote(notes.rootPath, "a/b: c*d")
         assertEquals("notes/a-b- c-d.md", path)
@@ -217,5 +232,60 @@ class NotesRepositoryTest {
 
         assertEquals("notes/Garden plan.inknote", notes.rename("notes/Garden.inknote", "Garden plan"))
         assertEquals(listOf<Byte>(1, 2, 3), store.readBytes("notes/Garden plan.inknote")!!.toList())
+    }
+
+    @Test
+    fun `a list read after the editor saved shows the typed text as the preview`() {
+        val path = notes.createNote(notes.rootPath, "Plan")!!
+        assertEquals("", notes.list(notes.rootPath).single().preview)
+
+        // What the editor writes when the user types under the heading.
+        assertTrue(notes.write(path, "# Plan\n\nBuy milk and bread"))
+        val row = notes.list(notes.rootPath).single()
+        assertEquals("Plan", row.title)
+        assertEquals("Buy milk and bread", row.preview)
+    }
+
+    @Test
+    fun `a quick note nothing was typed into is discarded`() {
+        val path = notes.createNote("notes/quick", "2026-10-22T09-00-00")!!
+        val made = notes.read(path)
+
+        assertTrue(notes.discardUntouched(path, made, typed = made))
+        assertFalse(notes.exists(path))
+    }
+
+    @Test
+    fun `a quick note with its text cleared is discarded`() {
+        val path = notes.createNote("notes/quick", "2026-10-22T09-00-00")!!
+        assertTrue(notes.discardUntouched(path, notes.read(path), typed = "  \n"))
+        assertFalse(notes.exists(path))
+    }
+
+    @Test
+    fun `a note with typing in it is never discarded`() {
+        val path = notes.createNote("notes/quick", "2026-10-22T09-00-00")!!
+        val made = notes.read(path)
+
+        // Typed in the editor, not saved yet.
+        assertFalse(notes.discardUntouched(path, made, typed = made + "hello"))
+        assertTrue(notes.exists(path))
+
+        // Saved, and the editor was opened again with the same made-with text.
+        assertTrue(notes.write(path, made + "hello"))
+        assertFalse(notes.discardUntouched(path, made, typed = made))
+        assertEquals(made + "hello", notes.read(path))
+    }
+
+    @Test
+    fun `only a typed note file can be discarded`() {
+        notes.createFolder(notes.rootPath, "Drafts.md")
+        assertFalse(notes.discardUntouched("notes/Drafts.md", "", typed = ""))
+        assertTrue(notes.exists("notes/Drafts.md"))
+
+        store.writeText("notes/photo.png", "")
+        assertFalse(notes.discardUntouched("notes/photo.png", "", typed = ""))
+        assertFalse(notes.discardUntouched("notes/missing.md", "", typed = ""))
+        assertTrue(notes.exists("notes/photo.png"))
     }
 }

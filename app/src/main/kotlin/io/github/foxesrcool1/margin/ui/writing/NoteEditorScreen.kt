@@ -15,7 +15,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -67,12 +70,19 @@ class NoteEditor(
  * [textWhenNew] is what a note that does not exist yet starts with. Nothing is
  * written until the user types: opening the split screen and closing it again
  * must not leave an empty file behind.
+ *
+ * [createdWith] is the text of a note that was made a moment ago for this
+ * visit, the Home quick note. The file exists from that moment, so when the
+ * editor closes with the note still like that (or blank), the file is deleted
+ * again. Otherwise every tap on the quick note button would leave a note
+ * behind. Null for any other note, and then nothing is ever deleted here.
  */
 @Composable
 fun rememberNoteEditor(
     notePath: String,
     saveRequests: Int = 0,
     textWhenNew: String = "",
+    createdWith: String? = null,
 ): NoteEditor {
     val context = LocalContext.current
     val notes = remember(context) { NotesRepository(DataRoot.repository(context)) }
@@ -209,9 +219,20 @@ fun rememberNoteEditor(
         if (saveRequests > 0 && loaded) save("keyboard")
     }
 
+    // A just made quick note that nothing was typed into goes away with the
+    // editor. The repository checks the file too, see discardUntouched.
+    fun discardIfUntouched(): Boolean {
+        val made = createdWith ?: return false
+        return loaded && current.get() == notePath && notes.discardUntouched(notePath, made, text)
+    }
+
     // The last chance to write, and it does not wait for a thread. A writing
     // app that loses the last sentence is not usable.
-    fun saveOnTheWayOut(reason: String) {
+    fun saveOnTheWayOut(reason: String, closing: Boolean = false) {
+        if (closing && discardIfUntouched()) {
+            AppLog.i(TAG, "Nothing was typed into $notePath. The file is deleted.")
+            return
+        }
         if (!loaded || text == saver.savedText) return
         runCatching { saver.save { text } }
             .onSuccess { written ->
@@ -226,7 +247,7 @@ fun rememberNoteEditor(
 
     // "Done", Back and Escape close the screen, and this runs.
     DisposableEffect(notePath) {
-        onDispose { saveOnTheWayOut("the editor closed") }
+        onDispose { saveOnTheWayOut("the editor closed", closing = true) }
     }
     // The Home key does not close the screen, it only stops it, and Android
     // may end a stopped app without another word. So this is the save that
@@ -251,8 +272,10 @@ fun NoteEditorScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     saveRequests: Int = 0,
+    /** See [rememberNoteEditor]. A note that was just made also opens with the keyboard up. */
+    createdWith: String? = null,
 ) {
-    val editor = rememberNoteEditor(notePath, saveRequests)
+    val editor = rememberNoteEditor(notePath, saveRequests, createdWith = createdWith)
 
     ScreenScaffold(
         title = editor.title,
@@ -262,13 +285,22 @@ fun NoteEditorScreen(
         backIcon = Lucide.ArrowLeft,
         backLabel = "Done",
     ) {
-        NoteField(editor = editor, modifier = Modifier.fillMaxWidth().weight(1f))
+        NoteField(editor = editor, modifier = Modifier.fillMaxWidth().weight(1f), focusOnOpen = createdWith != null)
     }
 }
 
 /** The box the note is typed in, with the word count and the save state under it. */
 @Composable
-fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier) {
+fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier, focusOnOpen: Boolean = false) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // The field cannot be typed into before the note is read, so the focus waits for that.
+    LaunchedEffect(focusOnOpen, editor.loaded) {
+        if (focusOnOpen && editor.loaded) {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
     Column(modifier = modifier) {
         EinkTextField(
             value = editor.text,
@@ -276,6 +308,7 @@ fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier) {
             textStyle = EinkType.reading,
             enabled = editor.loaded,
             modifier = Modifier
+                .focusRequester(focus)
                 .fillMaxWidth()
                 .weight(1f)
                 .einkFieldBorder(EinkColors.Faded)

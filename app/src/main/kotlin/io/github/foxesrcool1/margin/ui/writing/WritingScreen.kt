@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.ui.writing
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -95,6 +96,9 @@ fun WritingScreen(
         rows = withContext(AppDispatchers.io) { notes.list(folder) }
     }
 
+    // Back goes up one folder, like the arrow does, and leaves only from the top.
+    BackHandler(enabled = !notes.isRoot(folder)) { folder = notes.parentOf(folder) }
+
     // A request is taken once. This runs again with every new composition of
     // the tab, and an old request must not open the dialog a second time.
     LaunchedEffect(newNoteRequests) {
@@ -105,6 +109,20 @@ fun WritingScreen(
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         refresh++
         onPauseOrDispose { }
+    }
+    // The activity stays resumed when a note was written in a window beside
+    // this one, with Android's split screen, and then no resume comes. The
+    // window getting the focus back is the sign. The list is read again, and a
+    // list that did not change draws nothing.
+    val focused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    var lostFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (!focused) {
+            lostFocus = true
+        } else if (lostFocus) {
+            lostFocus = false
+            refresh++
+        }
     }
 
     fun openNewNote(title: String) {

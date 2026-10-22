@@ -25,6 +25,7 @@ import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
+import io.github.foxesrcool1.margin.core.routine.RoutineItem
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
@@ -231,6 +232,9 @@ class HomeActivity : ComponentActivity() {
      * One tap from Home makes a note and opens it. The name is the moment it
      * was made, because a note the user has not titled yet still needs to be
      * findable tomorrow.
+     *
+     * The file exists from the tap on. The editor is told what the note was
+     * made with, so it can delete the file again when the user types nothing.
      */
     private fun quickNote() {
         val notes = NotesRepository(DataRoot.repository(this))
@@ -241,9 +245,10 @@ class HomeActivity : ComponentActivity() {
                 .toString()
                 .replace(':', '-')
             val path = runCatching { notes.createNote(folder, stamp) }.getOrNull()
+            val madeWith = path?.let { runCatching { notes.read(it) }.getOrNull() }
             runOnUiThread {
                 if (path != null) {
-                    opener.openTypedNote(path)
+                    opener.openTypedNote(path, madeWith)
                 } else {
                     AppLog.e(TAG, "Could not make a quick note")
                 }
@@ -361,6 +366,7 @@ private fun LauncherHost(
             onQuickNote = onQuickNote,
             nextRoutineLabel = next?.item?.label,
             nextRoutinePart = next?.item?.part ?: PartOfDay.AnyTime,
+            nextOpensSomething = next?.item?.let { tabOf(it) != null || it.appComponent() != null } ?: true,
             continueTarget = continueTarget,
             onContinue = { target ->
                 when (target) {
@@ -371,19 +377,13 @@ private fun LauncherHost(
             },
             onStartNext = {
                 val item = next?.item ?: return@HomeScreen
-                val tab = when (item.target) {
-                    "read" -> LauncherRoute.Reading
-                    "write" -> LauncherRoute.Writing
-                    "journal" -> LauncherRoute.Journal
-                    "apps" -> LauncherRoute.Apps
-                    else -> null
-                }
+                val tab = tabOf(item)
                 val component = item.appComponent()
                 when {
                     tab != null -> onRoute(tab)
                     component != null -> startApp(context, component.first, component.second)
                     // An item with nothing to open is just something to tick
-                    // off, so Start marks it done and moves to the next one.
+                    // off, so its button marks it done and moves to the next one.
                     else -> scope.launch {
                         val done = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
                             runCatching { nextRoutine(DataRoot.repository(context), tickOff = item.id) }
@@ -438,6 +438,15 @@ private fun LauncherHost(
             onBack = { onRoute(route.parent) },
         )
     }
+}
+
+/** The tab a routine item opens, or null when it does not open one. */
+private fun tabOf(item: RoutineItem): LauncherRoute? = when (item.target) {
+    "read" -> LauncherRoute.Reading
+    "write" -> LauncherRoute.Writing
+    "journal" -> LauncherRoute.Journal
+    "apps" -> LauncherRoute.Apps
+    else -> null
 }
 
 /**

@@ -33,7 +33,13 @@ private const val TAG = "PageOpener"
  * in the composition for the half it owns.
  */
 interface PageOpener {
-    fun openTypedNote(path: String)
+    /**
+     * [createdWith] is the text of a note that was made a moment ago for this
+     * very visit, the Home quick note. A screen of its own deletes the file
+     * again when it closes with the note still like that, so nothing typed
+     * means no file. Null for any note that was already there.
+     */
+    fun openTypedNote(path: String, createdWith: String? = null)
     fun openInkNote(path: String, title: String, template: PageTemplate = PageTemplate.Blank)
     fun openBook(book: LibraryBook)
 
@@ -64,8 +70,8 @@ class ScreenPageOpener(
     private val afterCarry: () -> Unit = {},
 ) : PageOpener {
 
-    override fun openTypedNote(path: String) {
-        start("the note $path") { NoteEditorActivity.intent(context, path) }
+    override fun openTypedNote(path: String, createdWith: String?) {
+        start("the note $path") { NoteEditorActivity.intent(context, path, createdWith) }
     }
 
     override fun openInkNote(path: String, title: String, template: PageTemplate) {

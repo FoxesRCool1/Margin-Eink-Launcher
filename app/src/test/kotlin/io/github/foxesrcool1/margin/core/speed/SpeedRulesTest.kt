@@ -148,6 +148,41 @@ class SpeedRulesTest {
     }
 
     @Test
+    fun `an on purpose name further down the stack is found`() {
+        val frames = listOf(
+            "android.os.StrictMode.onReadFromDisk",
+            "io.github.foxesrcool1.margin.core.storage.LocalFileStore.write\$lambda\$0",
+            "io.github.foxesrcool1.margin.ui.writing.NoteEditorScreenKt.rememberNoteEditor\$saveOnTheWayOut",
+            "io.github.foxesrcool1.margin.HomeActivity.onPause",
+        )
+        assertTrue(SpeedWatch.onPurpose(frames))
+    }
+
+    @Test
+    fun `an on purpose onPause further down the stack is found`() {
+        val frames = listOf(
+            "android.os.StrictMode.onReadFromDisk",
+            "io.github.foxesrcool1.margin.core.storage.LocalFileStore.readText",
+            "io.github.foxesrcool1.margin.ui.reading.epub.EpubReaderActivity.onPause",
+        )
+        assertTrue(SpeedWatch.onPurpose(frames))
+    }
+
+    @Test
+    fun `a stack without an on purpose name is not on purpose`() {
+        val frames = listOf(
+            "android.os.StrictMode.onReadFromDisk",
+            "io.github.foxesrcool1.margin.ui.writing.WritingScreenKt.WritingScreen\$lambda\$1",
+        )
+        assertEquals(false, SpeedWatch.onPurpose(frames))
+    }
+
+    @Test
+    fun `an empty stack is not on purpose`() {
+        assertEquals(false, SpeedWatch.onPurpose(emptyList()))
+    }
+
+    @Test
     fun `a time over its budget is told, and one within it is not`() {
         assertTrue(SpeedWatch.check("A test", 300, 250))
         assertEquals(false, SpeedWatch.check("A test", 250, 250))

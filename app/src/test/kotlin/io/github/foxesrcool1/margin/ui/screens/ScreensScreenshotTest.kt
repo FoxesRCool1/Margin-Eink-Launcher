@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -85,6 +89,7 @@ import androidx.compose.runtime.Composable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -242,6 +247,32 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         capture("home_with_next")
     }
 
+    /** An item with nothing to open: its button is a check that says Done, and ticks the item off. */
+    @Test
+    fun homeWithNextItemToTickOff() {
+        seedContinue()
+        val target = continueTarget()
+        compose.setContent {
+            EinkTheme {
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = {},
+                    nextRoutineLabel = "Stretch",
+                    nextRoutinePart = PartOfDay.Morning,
+                    nextOpensSomething = false,
+                    continueTarget = target,
+                    now = fixedTime,
+                    use24Hour = true,
+                    battery = 50,
+                    wifi = true,
+                )
+            }
+        }
+        compose.onAllNodesWithContentDescription("Done").assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Start").assertCountEquals(0)
+        capture("home_next_tick_off")
+    }
+
     @Test
     fun homeWithoutPlants() {
         seedContinue()
@@ -329,6 +360,26 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.setContent { EinkTheme { WritingScreen(onBack = {}, onOpenNote = {}) } }
         waitForText("Essays")
         capture("writing")
+    }
+
+    /** The system Back key inside a folder goes up one folder. Only from the top folder does it leave. */
+    @Test
+    fun writingBackInsideAFolderGoesUpOneLevel() {
+        val notes = NotesRepository(DataRoot.repository(context))
+        notes.createFolder(notes.rootPath, "Essays")
+        var wentHome = false
+        compose.setContent { EinkTheme { WritingScreen(onBack = { wentHome = true }, onOpenNote = {}) } }
+        waitForText("Essays")
+        compose.onAllNodesWithText("Essays")[0].performClick()
+        compose.onNodeWithContentDescription("Up one folder").assertIsEnabled()
+
+        @Suppress("UNCHECKED_CAST")
+        val activity = (compose as AndroidComposeTestRule<*, androidx.activity.ComponentActivity>).activity
+        compose.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Up one folder").assertIsNotEnabled()
+        assertFalse(wentHome)
     }
 
     private fun seedJournal() {
@@ -483,6 +534,28 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         }
         compose.onAllNodesWithText("Reading")[0].performClick()
         capture("apps_folder_open")
+    }
+
+    /** The system Back key inside a folder goes back to the folders, as the arrow does, and not Home. */
+    @Test
+    fun appsBackInsideAFolderReturnsToTheFolders() {
+        var wentHome = false
+        compose.setContent {
+            EinkTheme {
+                AppsScreen(onBack = { wentHome = true }, previewApps = someApps, previewFolders = someFolders, initialPage = 1)
+            }
+        }
+        compose.onAllNodesWithText("Reading")[0].performClick()
+        compose.onAllNodesWithContentDescription("Back to the folders").assertCountEquals(1)
+
+        @Suppress("UNCHECKED_CAST")
+        val activity = (compose as AndroidComposeTestRule<*, androidx.activity.ComponentActivity>).activity
+        compose.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithContentDescription("Back to the folders").assertCountEquals(0)
+        assertFalse(wentHome)
+        capture("apps_back_to_folders")
     }
 
     @Test

@@ -54,6 +54,7 @@ class NoteEditorActivity : ComponentActivity() {
 
         AppLog.i(TAG, "Editing $path")
         notePath = path
+        val createdWith = intent.getStringExtra(EXTRA_CREATED_WITH)
         paneInk = PaneInk(this, lifecycleScope)
         watchAndroidSplit(split)
         intent.splitCarry()?.let { split.open(it.page, it.swapped) }
@@ -77,6 +78,7 @@ class NoteEditorActivity : ComponentActivity() {
                             notePath = path,
                             onClose = { finish() },
                             saveRequests = saveRequests.intValue,
+                            createdWith = createdWith,
                         )
                     },
                     pane = { SplitPane(split, paneHost) },
@@ -115,8 +117,12 @@ class NoteEditorActivity : ComponentActivity() {
     companion object {
         const val EXTRA_NOTE_PATH = "note_path"
 
-        fun intent(context: Context, notePath: String): Intent =
+        /** The text a just made note starts with. Present only for the Home quick note. */
+        const val EXTRA_CREATED_WITH = "created_with"
+
+        fun intent(context: Context, notePath: String, createdWith: String? = null): Intent =
             Intent(context, NoteEditorActivity::class.java)
                 .putExtra(EXTRA_NOTE_PATH, notePath)
+                .also { if (createdWith != null) it.putExtra(EXTRA_CREATED_WITH, createdWith) }
     }
 }

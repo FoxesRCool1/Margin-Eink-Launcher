@@ -22,11 +22,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.eink.EinkDevice
 import io.github.foxesrcool1.margin.core.eink.EinkDevices
+import io.github.foxesrcool1.margin.core.eink.EinkThread
 import io.github.foxesrcool1.margin.core.eink.FastPenPath
 import io.github.foxesrcool1.margin.core.eink.RefreshMode
 import io.github.foxesrcool1.margin.core.eink.ViwoodsEinkDevice
 import io.github.foxesrcool1.margin.core.launcher.DefaultLauncher
 import io.github.foxesrcool1.margin.core.log.AppLog
+import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkTheme
@@ -53,6 +55,7 @@ class DeviceTestActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ScreenWindow.attach(this)
         AppLog.i(TAG, "Device test opened. Target SDK ${applicationInfo.targetSdkVersion}.")
         setContent {
             EinkTheme {
@@ -64,6 +67,7 @@ class DeviceTestActivity : ComponentActivity() {
 
 private class DeviceTest(
     val label: String,
+    val vendor: Boolean = false,
     val run: (Context, EinkDevice) -> String,
 )
 
@@ -73,6 +77,7 @@ private fun DeviceTestScreen(onClose: () -> Unit) {
     val device = remember { EinkDevices.get(context) }
     val results = remember { mutableStateMapOf<String, String>() }
     val tests = remember { buildTests() }
+    val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
 
     ScreenScaffold(
         title = "Device test",
@@ -102,13 +107,28 @@ private fun DeviceTestScreen(onClose: () -> Unit) {
             rowHeight = TestRowHeight,
             modifier = Modifier.weight(1f),
         ) { _, test ->
+            // The two lines every answer gets: one in the log, one on the row.
+            fun report(answer: String) {
+                AppLog.i(TAG, "=== ${test.label}: $answer")
+                results[test.label] = answer
+            }
             EinkRow(
                 onClick = {
                     AppLog.i(TAG, "--- ${test.label}")
-                    val answer = runCatching { test.run(context, device) }
-                        .getOrElse { "crashed in our own code: ${it.javaClass.simpleName} ${it.message}" }
-                    AppLog.i(TAG, "=== ${test.label}: $answer")
-                    results[test.label] = answer
+                    if (test.vendor) {
+                        // A vendor call can wait on a binder call, so it never
+                        // runs on the main thread.
+                        results[test.label] = "Running"
+                        EinkThread.run {
+                            val answer = runCatching { test.run(context, device) }
+                                .getOrElse { "crashed in our own code: ${it.javaClass.simpleName} ${it.message}" }
+                            mainHandler.post { report(answer) }
+                        }
+                    } else {
+                        val answer = runCatching { test.run(context, device) }
+                            .getOrElse { "crashed in our own code: ${it.javaClass.simpleName} ${it.message}" }
+                        report(answer)
+                    }
                 },
             ) { pressed ->
                 val colour = if (pressed) io.github.foxesrcool1.margin.design.EinkColors.Paper
@@ -133,7 +153,7 @@ private val TestRowHeight = 96.dp
 private fun buildTests(): List<DeviceTest> {
     val tests = mutableListOf<DeviceTest>()
 
-    tests += DeviceTest("1. Read device info") { context, device ->
+    tests += DeviceTest("1. Read device info", vendor = true) { context, device ->
         val metrics = context.resources.displayMetrics
         val lines = listOf(
             "Display" to "${metrics.widthPixels} x ${metrics.heightPixels} px",
@@ -146,20 +166,20 @@ private fun buildTests(): List<DeviceTest> {
         "${lines.size} facts written to the log. Layer: ${device.name}."
     }
 
-    tests += DeviceTest("2. List the vendor API in the log") { _, device ->
+    tests += DeviceTest("2. List the vendor API in the log", vendor = true) { _, device ->
         val viwoods = device as? ViwoodsEinkDevice ?: return@DeviceTest "No ViWoods layer on this device"
         viwoods.logVendorApi()
         "Written to the log"
     }
 
     RefreshMode.entries.forEach { mode ->
-        tests += DeviceTest("3. Picture mode: ${mode.label}") { _, device ->
+        tests += DeviceTest("3. Picture mode: ${mode.label}", vendor = true) { _, device ->
             val result = device.setRefreshMode(mode)
             "$result. Now reads ${device.refreshMode()?.label ?: "unknown"}. Turn a page and watch."
         }
     }
 
-    tests += DeviceTest("4. Full refresh now, vendor mode only") { _, device -> device.fullRefresh().toString() }
+    tests += DeviceTest("4. Full refresh now, vendor mode only", vendor = true) { _, device -> device.fullRefresh().toString() }
     tests += DeviceTest("4b. Force refresh, black flash") { context, _ ->
         val activity = context.findActivity() ?: return@DeviceTest "No activity"
         io.github.foxesrcool1.margin.core.eink.ScreenRefresh.run(activity)

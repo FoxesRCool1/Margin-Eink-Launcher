@@ -71,8 +71,8 @@ object SpeedWatch {
 
     /**
      * Code that does disk work on the main thread on purpose, each for a
-     * reason written where it happens. Matched against the first frame of
-     * this app in a StrictMode report.
+     * reason written where it happens. Matched against every frame of a
+     * StrictMode report, not only the first frame of this app.
      */
     private val ON_PURPOSE = listOf(
         // Before the first frame, so the window does not turn or flash after it.
@@ -122,12 +122,13 @@ object SpeedWatch {
 
     private fun report(violation: Violation, leak: Boolean) {
         val kind = violation.javaClass.simpleName.removeSuffix("Violation")
-        val frame = firstOwnFrame(violation.stackTrace.map { "${it.className}.${it.methodName}" })
+        val frames = violation.stackTrace.map { "${it.className}.${it.methodName}" }
+        val frame = firstOwnFrame(frames)
         // Once per place and kind, or a busy loop would fill the log.
         if (!seen.add("$kind@$frame")) return
         when {
             leak -> AppLog.w(TAG, "Leak: $kind, made at $frame")
-            ON_PURPOSE.any { frame.contains(it) } -> AppLog.d(TAG, "Main thread $kind, on purpose: $frame")
+            onPurpose(frames) -> AppLog.d(TAG, "Main thread $kind, on purpose: $frame")
             else -> AppLog.w(TAG, "Slow: main thread $kind at $frame")
         }
     }
@@ -137,6 +138,10 @@ object SpeedWatch {
         val own = frames.firstOrNull { it.startsWith(PACKAGE) && !it.contains(".core.speed.") }
         return (own ?: frames.firstOrNull() ?: "unknown").removePrefix("$PACKAGE.")
     }
+
+    /** True when any frame of the stack names a place that does it on purpose. */
+    internal fun onPurpose(frames: List<String>): Boolean =
+        ON_PURPOSE.any { name -> frames.any { it.contains(name) } }
 
     private const val PACKAGE = "io.github.foxesrcool1.margin"
 }

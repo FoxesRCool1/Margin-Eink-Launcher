@@ -169,7 +169,8 @@ private class PaneOpener(
     private val host: PaneHost,
     private val context: android.content.Context,
 ) : PageOpener {
-    override fun openTypedNote(path: String) {
+    // [createdWith] only matters for a screen of its own: the quick note is made on Home.
+    override fun openTypedNote(path: String, createdWith: String?) {
         split.show(PanePage.TypedNote(path))
     }
 

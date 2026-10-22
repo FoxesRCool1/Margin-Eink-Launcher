@@ -4,6 +4,79 @@ One section per step. Newest step at the top.
 
 ---
 
+## A QA pass in the emulator: Back, quick notes, keyboard, Wi-Fi
+
+Date: 2026-10-22. Branch `Dev`.
+
+### What was done
+
+1. **Apps.** The system Back key inside a folder goes back to the folders, as
+   the arrow does. With the search field open, Back closes the search first.
+   Apps also comes back on the page the user left it on (Pinned, Folders,
+   A to Z) for as long as the app runs. It is kept in memory only.
+2. **Quick note.** A tap on the quick note button still makes the file at
+   once, but the editor now deletes it again when it closes with the note
+   still as it was made (or blank). The delete goes through
+   `NotesRepository.discardUntouched`, which refuses anything but an untouched
+   typed note. A note that was just made opens with the cursor in the field
+   and the keyboard up.
+3. **Device test and pen test screens** call `ScreenWindow.attach`, so they
+   follow Landscape Mode and the status bar setting, and declare the same
+   `configChanges` as every other activity. Their vendor calls run on
+   `EinkThread`; the answer is shown on the main thread.
+4. **PDF reader.** While the "Go to page" box is open, the window does not
+   resize for the keyboard (`SOFT_INPUT_ADJUST_NOTHING` on the reader window,
+   put back when the box closes). The reader no longer flips to its wide shape
+   and fits the page again while a number is typed. The EPUB reader has no
+   shape that depends on the window height, and its only text box, the note
+   panel, needs the window to resize, so it is unchanged.
+5. **Home, Next row.** An item that opens a tab or an app shows the play icon
+   called "Start". An item with nothing to open shows a check called "Done",
+   because that is what it does.
+6. **Home, status line.** Wi-Fi and battery are one target, 56 dp tall, that
+   inverts when pressed. It opens Android's internet panel (Wi-Fi settings if
+   there is no panel), so Wi-Fi goes off in one tap.
+7. **Speed log.** A report is now on purpose when any frame of its stack names
+   a place in `SpeedWatch.ON_PURPOSE`, not only the first frame of this app.
+   The last save of a note and `EpubReaderActivity.onPause` no longer write
+   `Slow:` lines. The highlight note save in the EPUB reader was already on
+   `AppDispatchers.io`; only its pause path is on the main thread, on purpose.
+8. **Write list.** There is no preview cache. The list reads each note again
+   on every load, and a test now pins that. It also reads again when the
+   window gets the focus back, for a note written in a window beside it. A
+   note that holds only a heading, or one line, has no preview and shows MD.
+9. **Write tab.** The system Back key inside a folder goes up one folder, and
+   leaves for Home only from the top folder.
+10. **Notes with the same name.** A second note called "groceries" is the file
+    "groceries 2.md", and its heading is now "# groceries 2" too, so the two
+    rows no longer read the same.
+
+### What does not work, or is not checked
+
+- The keyboard rules in 2 and 4 cannot be seen in a screenshot. Check them on
+  the tablet.
+- If a quick note is open in a window that Android ends in the background, the
+  file is deleted when the editor is torn down, if nothing was typed.
+
+### Device test list for the owner
+
+1. Apps, A to Z. Leave Apps, open it again: it must be on A to Z. Open a
+   folder and press the Back key: you must land on the folder list.
+2. Press the quick note button on Home. The keyboard must be up and the cursor
+   in the note. Press Done without typing. Open Write: no new note.
+3. Quick note again, type a word, press Done. The note must be in Write with
+   the word under its heading.
+4. In a PDF, More, Go to page. Type a number. The toolbar and the page must
+   stay where they are while the keyboard is up. The box must stay in sight.
+5. Home with a routine item that has no target: the button must be a check,
+   called Done, and it ticks the item off. With a target: the play icon.
+6. Press the Wi-Fi and battery line on Home. The Wi-Fi panel must open.
+7. Open Device test and Pen test with Landscape Mode on: they must turn.
+8. Write, open a folder, press the Back key: you must land one folder up.
+   Make two notes called the same: the rows must read "name" and "name 2".
+
+---
+
 ## Journal: a daily word goal, and eight fixes
 
 Date: 2026-10-22. Branch `Dev`. Decision 0025.

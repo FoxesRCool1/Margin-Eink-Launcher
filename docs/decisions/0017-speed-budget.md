@@ -40,7 +40,9 @@ A few places do disk work on the main thread on purpose, each with its reason
 written where it happens: the window settings before the first frame, the
 log folder, the fast pen crash guard, and the last save of a note or an entry
 when the screen goes. They are listed in `SpeedWatch.ON_PURPOSE` and write at
-debug level instead.
+debug level instead. A report counts as on purpose when any frame of its stack
+names one of them, because the frame StrictMode points at is usually a file
+helper or a lambda deeper down.
 
 It already paid for itself: in the emulator it caught the EPUB reader
 looking up the data folder on the main thread each time a book opened. That

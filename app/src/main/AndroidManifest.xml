@@ -163,19 +163,19 @@
             android:theme="@style/Theme.Margin"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- The Step 2 device spike: refresh modes, fast pen paths, home role. -->
+        <!-- The Step 2 device spike: refresh modes, fast pen paths, home role. It turns with Landscape Mode like every screen. -->
         <activity
             android:name=".ui.devicetest.DeviceTestActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.Margin" />
 
         <activity
             android:name=".ui.devicetest.PenTestActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.Margin" />
 
         <!-- Android reports the result of an update install here. -->

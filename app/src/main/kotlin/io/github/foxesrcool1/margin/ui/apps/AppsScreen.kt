@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.ui.apps
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -67,6 +68,10 @@ private const val PAGE_SIZE = 6
 
 private enum class AppsPage { Pinned, Folders, All }
 
+// Kept for the life of the process, so Apps comes back on the page the user
+// left it on; not saved to disk.
+private object LastAppsPage { var page = AppsPage.Pinned }
+
 /** One line on the first page: a pinned app, or one of the ways out. */
 private sealed interface FirstPageRow {
     data class Pinned(val entry: LauncherEntry) : FirstPageRow
@@ -103,7 +108,8 @@ fun AppsScreen(
     /** For the screenshot tests, which have no tablet to list the apps of. */
     previewApps: List<LauncherEntry>? = null,
     previewFolders: AppFolders? = null,
-    initialPage: Int = 0,
+    /** Null: the page the user was on last. */
+    initialPage: Int? = null,
     /** Opens the A to Z page with the search field showing this text. */
     initialSearch: String? = null,
     /** Opens the A to Z page with the hidden apps showing. */
@@ -118,7 +124,12 @@ fun AppsScreen(
     val settings = remember(context) { SettingsStore(context) }
     val folderStore = remember(context) { AppFoldersRepository(DataRoot.repository(context)) }
 
-    var page by remember { mutableStateOf(AppsPage.entries[initialPage.coerceIn(0, AppsPage.entries.size - 1)]) }
+    var page by remember { mutableStateOf(initialPage?.let { AppsPage.entries[it.coerceIn(0, AppsPage.entries.size - 1)] } ?: LastAppsPage.page) }
+    // The page icons choose the page and keep the choice for next time.
+    fun showPage(next: AppsPage) {
+        page = next
+        LastAppsPage.page = next
+    }
     var apps by remember { mutableStateOf(previewApps.orEmpty()) }
     var escapes by remember { mutableStateOf<List<EscapeEntry>>(emptyList()) }
     var folders by remember { mutableStateOf(previewFolders ?: AppFolders()) }
@@ -196,6 +207,11 @@ fun AppsScreen(
     LaunchedEffect(search, showHidden) { listState.page = 0 }
     LaunchedEffect(search != null) { if (search != null) searchFocus.requestFocus() }
 
+    // Back goes one level up, like the arrow does.
+    BackHandler(enabled = inFolder != null || search != null) {
+        if (inFolder != null) openFolder = null else search = null
+    }
+
     ScreenScaffold(
         title = inFolder?.name ?: "Apps",
         overline = when {
@@ -214,19 +230,19 @@ fun AppsScreen(
                     icon = Lucide.Pin,
                     label = "Pinned apps",
                     selected = page == AppsPage.Pinned,
-                    onClick = { page = AppsPage.Pinned },
+                    onClick = { showPage(AppsPage.Pinned) },
                 )
                 IconPressButton(
                     icon = Lucide.Folder,
                     label = "Folders",
                     selected = page == AppsPage.Folders,
-                    onClick = { page = AppsPage.Folders },
+                    onClick = { showPage(AppsPage.Folders) },
                 )
                 IconPressButton(
                     icon = Lucide.ArrowDownAZ,
                     label = "All apps",
                     selected = page == AppsPage.All,
-                    onClick = { page = AppsPage.All },
+                    onClick = { showPage(AppsPage.All) },
                 )
                 if (page == AppsPage.Folders) {
                     IconPressButton(

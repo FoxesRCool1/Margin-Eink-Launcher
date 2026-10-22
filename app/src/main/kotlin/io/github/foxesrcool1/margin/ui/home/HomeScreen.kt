@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -90,6 +92,11 @@ fun HomeScreen(
     nextRoutineLabel: String? = null,
     /** When in the day the next item belongs. Any Time reads "Next", the others "This Evening" and so on. */
     nextRoutinePart: PartOfDay = PartOfDay.AnyTime,
+    /**
+     * True when the next item opens a tab or an app, and its button says Start.
+     * False for an item with nothing to open: its button ticks the item off and says Done.
+     */
+    nextOpensSomething: Boolean = true,
     onStartNext: () -> Unit = {},
     /** The book or note to go back to. Null leaves the row out. */
     continueTarget: ContinueTarget? = null,
@@ -156,7 +163,12 @@ fun HomeScreen(
                 // finished, rather than showing an empty box: a blank line on
                 // e-ink is a repaint for nothing.
                 if (nextRoutineLabel != null) {
-                    NextRow(label = nextRoutineLabel, part = nextRoutinePart, onStart = onStartNext)
+                    NextRow(
+                        label = nextRoutineLabel,
+                        part = nextRoutinePart,
+                        opensSomething = nextOpensSomething,
+                        onStart = onStartNext,
+                    )
                 }
             }
             val goOn: @Composable () -> Unit = {
@@ -214,11 +226,15 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusLine(
-                    batteryPercent = batteryPercent,
-                    onWifi = onWifi,
-                    modifier = Modifier.weight(1f),
-                )
+                // The status is one target, as wide as it is. The room to its
+                // right is not part of it.
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    StatusLine(
+                        batteryPercent = batteryPercent,
+                        onWifi = onWifi,
+                        onClick = { openInternetPanel(context) },
+                    )
+                }
                 IconPressButton(icon = Lucide.SquarePen, label = "Quick note", onClick = onQuickNote)
                 Spacer(modifier = Modifier.width(4.dp))
                 SplitButton()
@@ -344,11 +360,12 @@ private fun ContinueRow(
     }
 }
 
-/** The next routine item, with a button that starts it. */
+/** The next routine item, with a button that starts it, or ticks it off when there is nothing to start. */
 @Composable
 private fun NextRow(
     label: String,
     part: PartOfDay,
+    opensSomething: Boolean,
     onStart: () -> Unit,
 ) {
     Row(
@@ -366,8 +383,8 @@ private fun NextRow(
             )
         }
         IconPressButton(
-            icon = Lucide.Play,
-            label = "Start",
+            icon = if (opensSomething) Lucide.Play else Lucide.Check,
+            label = if (opensSomething) "Start" else "Done",
             onClick = onStart,
             bordered = true,
         )
@@ -449,30 +466,47 @@ private fun HomeTab(
     }
 }
 
-/** Wi-Fi and battery, as two icons and one number. A part that is not known is left out. */
+/**
+ * Wi-Fi and battery, as two icons and one number. A part that is not known is
+ * left out. The whole line is one target that opens the Wi-Fi panel, so Wi-Fi
+ * goes off in one tap, and it inverts while pressed like the other targets.
+ */
 @Composable
 private fun StatusLine(
     batteryPercent: Int?,
     onWifi: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
+
     Row(
-        modifier = modifier.semantics(mergeDescendants = true) {
-            contentDescription = HomeStrings.status(batteryPercent, onWifi)
-        },
+        modifier = modifier
+            .heightIn(min = EinkDimens.touchTarget)
+            .clip(EinkShapes.field)
+            .background(if (pressed) EinkColors.Ink else EinkColors.Paper)
+            .einkClickable(interactionSource = interactionSource, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Wi-Fi"
+                stateDescription = HomeStrings.status(batteryPercent, onWifi)
+                role = Role.Button
+            }
+            .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         EinkIcon(
             icon = if (onWifi) Lucide.Wifi else Lucide.WifiOff,
             size = 20.dp,
-            color = if (onWifi) EinkColors.Ink else EinkColors.Faded,
+            color = if (onWifi || pressed) foreground else EinkColors.Faded,
         )
         if (batteryPercent != null) {
-            EinkIcon(icon = HomeStrings.batteryIcon(batteryPercent), size = 20.dp)
+            EinkIcon(icon = HomeStrings.batteryIcon(batteryPercent), size = 20.dp, color = foreground)
             CapsLabel(
                 text = "$batteryPercent%",
-                style = EinkType.capsSmall,
+                style = EinkType.capsSmall.copy(color = foreground),
                 modifier = Modifier.clearAndSetSemantics { },
             )
         }

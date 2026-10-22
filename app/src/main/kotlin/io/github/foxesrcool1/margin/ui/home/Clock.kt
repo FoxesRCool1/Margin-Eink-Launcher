@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleStartEffect
+import io.github.foxesrcool1.margin.core.log.AppLog
 import java.time.LocalDateTime
 
 /**
@@ -68,3 +70,13 @@ fun onWifi(context: Context): Boolean = runCatching {
     val capabilities = manager.getNetworkCapabilities(network) ?: return false
     capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
 }.getOrDefault(false)
+
+/**
+ * Opens Android's internet panel, where Wi-Fi goes off in one tap, or the Wi-Fi
+ * settings where a tablet has no such panel. Never throws.
+ */
+fun openInternetPanel(context: Context) {
+    runCatching { context.startActivity(Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)) }
+        .recoverCatching { context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
+        .onFailure { AppLog.w("HomeStatus", "Could not open the Wi-Fi panel or the Wi-Fi settings", it) }
+}

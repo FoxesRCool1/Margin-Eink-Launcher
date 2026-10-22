@@ -102,7 +102,12 @@ class NotesRepository(private val data: DataRepository) {
         )
         val path = data.freePath(wanted)
 
-        val body = "# ${title.trim()}\n\n"
+        // A name that was taken got a number. The heading gets it too, or both
+        // rows in the Writing tab would read the same.
+        val wantedStem = RelativePaths.nameOf(wanted).substringBeforeLast('.')
+        val usedStem = RelativePaths.nameOf(path).substringBeforeLast('.')
+        val number = if (usedStem.startsWith(wantedStem)) usedStem.removePrefix(wantedStem) else ""
+        val body = "# ${title.trim()}$number\n\n"
         return if (data.store.writeText(path, body)) {
             AppLog.i(TAG, "Made a note at $path")
             path
@@ -190,6 +195,22 @@ class NotesRepository(private val data: DataRepository) {
     fun delete(path: String): Boolean {
         AppLog.i(TAG, "Deleting $path")
         return data.store.delete(path)
+    }
+
+    /**
+     * Deletes a typed note that was made a moment ago and has had nothing typed
+     * into it: [typed] and the file are both blank or still [madeWith]. True
+     * when the file was deleted. This is the only delete that is done for the
+     * user without asking, so it is narrow: a folder, a file that is not a
+     * typed note, a file that cannot be read and a file with other text in it
+     * are all left alone.
+     */
+    fun discardUntouched(path: String, madeWith: String, typed: String): Boolean {
+        if (!StorageLayout.isTypedNote(RelativePaths.nameOf(path)) || !data.store.exists(path)) return false
+        if (typed.isNotBlank() && typed != madeWith) return false
+        val onFile = readOrNull(path) ?: return false
+        if (onFile.isNotBlank() && onFile != madeWith) return false
+        return delete(path)
     }
 
     /** The path a Quick note from Today should use. */
