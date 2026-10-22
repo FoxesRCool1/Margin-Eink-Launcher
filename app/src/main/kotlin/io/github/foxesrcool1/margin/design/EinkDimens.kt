@@ -6,7 +6,8 @@ import androidx.compose.ui.unit.dp
 /**
  * Sizes used across the app.
  *
- * E-ink rule 5: lines are 1 dp or 2 dp, no shadows, no gradients.
+ * E-ink rule 5: lines are 1 dp or 2 dp (icons excepted, decision 0026), no
+ * shadows, no gradients.
  * E-ink rule 6: a touch target is 56 dp or more, with space around it.
  */
 object EinkDimens {
@@ -25,7 +26,7 @@ object EinkDimens {
     /** A fine rule. */
     val hairline: Dp = 1.dp
 
-    /** A heavy rule, and the line of an icon. */
+    /** A heavy rule. */
     val rule: Dp = 2.dp
 
     /** A row in a list with one line of text, and the rule under it. */

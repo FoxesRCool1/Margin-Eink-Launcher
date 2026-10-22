@@ -32,8 +32,10 @@ Read this file at the start of every session. It is the short form of
 3. Pure black `#000000` on pure white `#FFFFFF`. No cream. No beige.
 4. Grey is for large inactive text only.
 5. The pressed state is an instant colour invert. No shadows, no elevation,
-   no gradients. Lines are 1 dp or 2 dp. Corners are round: the owner asked
-   for that. Shapes come from `EinkShapes`.
+   no gradients. Lines are 1 dp or 2 dp. Icons are the exception: they are drawn
+   the Lucide way, with the line growing with the icon (owner's request,
+   2026-10-22, decision 0026). Corners are round: the owner asked for that.
+   Shapes come from `EinkShapes`.
 6. Touch targets are 56 dp or more, with space between them for finger and pen.
 7. Change as few pixels as possible per update. The clock updates once a minute.
 8. A full refresh goes through `ScreenRefresh.run(activity)`: a black flash

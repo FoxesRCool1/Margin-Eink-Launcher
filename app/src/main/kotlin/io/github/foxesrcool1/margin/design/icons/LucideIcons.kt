@@ -298,6 +298,22 @@ object Lucide {
         ),
     )
 
+    val Flower = LucideIcon(
+        name = "flower",
+        strokes = listOf(
+            "M9 12 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0 Z",
+            "M12 16.5 A4.5 4.5 0 1 1 7.5 12 A4.5 4.5 0 1 1 12 7.5 a4.5 4.5 0 1 1 4.5 4.5 a4.5 4.5 0 1 1 -4.5 4.5",
+            "M12 7.5 V9",
+            "M7.5 12 H9",
+            "M16.5 12 H15",
+            "M12 16.5 V15",
+            "m8 8 l1.88 1.88",
+            "M14.12 9.88 L16 8",
+            "m8 16 l1.88 -1.88",
+            "M14.12 14.12 L16 16",
+        ),
+    )
+
     val Flower2 = LucideIcon(
         name = "flower-2",
         strokes = listOf(

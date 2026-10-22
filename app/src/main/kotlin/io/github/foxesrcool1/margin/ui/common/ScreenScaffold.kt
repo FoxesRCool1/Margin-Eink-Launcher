@@ -150,7 +150,7 @@ fun ScreenScaffold(
                     }
                     // A narrow half has no room for the plant beside the title.
                     if (!wide && !longTitle && plant != null && !inPane && roomForPlant) {
-                        PlantArt(plant = plant, size = 52.dp)
+                        PlantArt(plant = plant, size = 56.dp)
                     }
                     when {
                         inPane -> PaneControls()

@@ -245,7 +245,7 @@ fun HomeScreen(
     }
 }
 
-private val PLANT_SIZE = 96.dp
+private val PLANT_SIZE = 72.dp
 
 /**
  * The time in Bodoni Moda, on the natural line height of the font. The digits

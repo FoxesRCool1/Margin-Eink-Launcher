@@ -33,11 +33,20 @@ import io.github.foxesrcool1.margin.design.einkClickable
 import io.github.foxesrcool1.margin.design.icons.LucideIcon
 
 /**
- * A Lucide icon, drawn as line art.
+ * The line of an icon, in the icon's own 24-unit grid: 2 units for an icon
+ * the size of a control, the lighter 1.5 units for a large one. Lucide itself
+ * does this, and the line grows with the icon.
+ */
+fun defaultStrokeUnits(size: Dp): Float = if (size <= 32.dp) 2f else 1.5f
+
+/**
+ * A Lucide icon, drawn the Lucide way.
  *
- * The line is [strokeWidth] wide whatever the [size] is. E-ink rule 5 says
- * lines are 1 dp or 2 dp, and a line that grew with the icon would break that
- * for every large icon on Home.
+ * The line is [strokeUnits] wide in the icon's own 24-unit grid, so it grows
+ * with the [size], like the icons on lucide.dev. A 24 dp icon has a 2 dp line.
+ * A large icon takes the lighter 1.5 units, so a 56 dp icon has a 3.5 dp line
+ * and still looks fine. Pass [strokeUnits] to override that. Icons are the
+ * one exception to e-ink rule 5 (decision 0026).
  */
 @Composable
 fun EinkIcon(
@@ -45,16 +54,12 @@ fun EinkIcon(
     modifier: Modifier = Modifier,
     size: Dp = EinkDimens.icon,
     color: Color = EinkColors.Ink,
-    strokeWidth: Dp = EinkDimens.rule,
+    strokeUnits: Float = defaultStrokeUnits(size),
 ) {
     Canvas(modifier = modifier.size(size)) {
         val factor = this.size.minDimension / LucideIcon.VIEWPORT
-        val stroke = Stroke(
-            // Divided by the factor, because the scale below would multiply it.
-            width = strokeWidth.toPx() / factor,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
-        )
+        // In grid units, because the scale below multiplies it.
+        val stroke = Stroke(width = strokeUnits, cap = StrokeCap.Round, join = StrokeJoin.Round)
         scale(scale = factor, pivot = Offset.Zero) {
             icon.fillPaths.forEach { drawPath(path = it, color = color, style = Fill) }
             icon.strokePaths.forEach { drawPath(path = it, color = color, style = stroke) }

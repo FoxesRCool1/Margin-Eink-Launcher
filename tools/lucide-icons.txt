@@ -108,6 +108,7 @@ coffee
 # Plants: the corner drawings and the app icon
 sprout
 leaf
+flower
 flower-2
 tree-deciduous
 clover

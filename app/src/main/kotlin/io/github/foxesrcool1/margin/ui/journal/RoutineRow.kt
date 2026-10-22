@@ -1,15 +1,10 @@
 package io.github.foxesrcool1.margin.ui.journal
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,9 +12,9 @@ import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.design.EinkColors
-import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
@@ -55,16 +50,10 @@ fun RoutineRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .then(
-                        if (status.doneToday) {
-                            Modifier.background(foreground, CircleShape)
-                        } else {
-                            Modifier.border(EinkDimens.hairline, foreground, CircleShape)
-                        },
-                    ),
+            EinkIcon(
+                icon = if (status.doneToday) Lucide.CircleCheck else Lucide.Circle,
+                size = 22.dp,
+                color = foreground,
             )
             Spacer(modifier = Modifier.width(14.dp))
 

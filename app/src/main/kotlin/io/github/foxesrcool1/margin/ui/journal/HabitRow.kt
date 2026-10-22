@@ -22,9 +22,11 @@ import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
+import io.github.foxesrcool1.margin.design.icons.Lucide
 
 /**
  * One habit: its name, its streak, and a row of dots for the last 14 days.
@@ -48,10 +50,10 @@ fun HabitRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Dot(
-                filled = summary.doneToday,
-                colour = foreground,
-                diameter = 22.dp,
+            EinkIcon(
+                icon = if (summary.doneToday) Lucide.CircleCheck else Lucide.Circle,
+                size = 22.dp,
+                color = foreground,
             )
             Spacer(modifier = Modifier.width(14.dp))
             EinkText(

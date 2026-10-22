@@ -1,22 +1,14 @@
 package io.github.foxesrcool1.margin.ui.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
-import io.github.foxesrcool1.margin.design.EinkDimens
-import io.github.foxesrcool1.margin.design.EinkShapes
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.EinkIcon
@@ -24,6 +16,7 @@ import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.PagedList
+import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.design.icons.LucideIcon
 
 /**
@@ -104,7 +97,7 @@ private fun SettingRow(row: Setting) {
             )
             if (row.value != null) CapsLabel(text = row.value, style = EinkType.capsSmall.copy(color = strong))
             if (row.on != null) {
-                SwitchMark(on = row.on, color = strong, knob = if (pressed && row.enabled) EinkColors.Ink else EinkColors.Paper)
+                SwitchMark(on = row.on, color = strong)
             }
             if (row.trailing != null) EinkIcon(icon = row.trailing, size = 22.dp, color = strong)
         }
@@ -113,21 +106,16 @@ private fun SettingRow(row: Setting) {
 }
 
 /**
- * A switch: a black pill with the knob on the right is on, an outline with
- * the knob on the left is off. [knob] is the colour behind the row, so the
- * knob of a pill that is on shows up as a hole.
+ * A switch: Lucide toggle-left is off. Toggle-right is on, and its knob is
+ * filled so that on shows at a glance on the panel. The shapes are Lucide's.
  */
+private val ToggleOn = LucideIcon(
+    name = "toggle-right-on",
+    strokes = Lucide.ToggleRight.strokes,
+    fills = listOf(Lucide.ToggleRight.strokes.first()),
+)
+
 @Composable
-private fun SwitchMark(on: Boolean, color: Color, knob: Color) {
-    Box(
-        modifier = Modifier
-            .size(width = 48.dp, height = 28.dp)
-            .clip(EinkShapes.control)
-            .background(if (on) color else Color.Transparent)
-            .border(width = EinkDimens.rule, color = color, shape = EinkShapes.control)
-            .padding(5.dp),
-        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-    ) {
-        Box(modifier = Modifier.size(14.dp).clip(EinkShapes.control).background(if (on) knob else color))
-    }
+private fun SwitchMark(on: Boolean, color: Color) {
+    EinkIcon(icon = if (on) ToggleOn else Lucide.ToggleLeft, size = 36.dp, color = color)
 }

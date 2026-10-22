@@ -31,7 +31,7 @@ asked for that on 2026-09-20, see `docs/decisions/0013-icons-and-round-shapes.md
 | --- | --- | --- | --- |
 | `design/icons/LucideIcons.kt` | The path data of the icons the app uses, about 90 of them | `lucide-static` 1.47.0 from npm, written out by `tools/lucide.py` | ISC. Icons that come from Feather: MIT |
 | `app/src/main/res/drawable/ic_launcher_foreground.xml` | The app icon: the Lucide icon "sprout" | The same, written out by `tools/lucide.py` | ISC |
-| `design/components/PlantArt.kt` | The plant at the top of a screen. It holds no drawing: it draws a Lucide plant icon large, with a fine line | The same | ISC |
+| `design/components/PlantArt.kt` | The plant at the top of a screen. It holds no drawing: it draws a Lucide plant icon larger than a control, with Lucide's light 1.5 unit line | The same | ISC |
 | `tools/lucide-icons.txt` | The names of the icons in use | This project | Same as the app |
 
 The full licence text, both parts, is in `licenses/lucide/LICENSE`. The ISC
