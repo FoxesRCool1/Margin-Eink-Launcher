@@ -79,7 +79,7 @@
         -->
         <activity
             android:name=".HomeActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
@@ -103,7 +103,7 @@
         -->
         <activity
             android:name=".ui.writing.NoteEditorActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Margin"
@@ -115,7 +115,7 @@
         -->
         <activity
             android:name=".DemoActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/demo_title"
             android:theme="@style/Theme.Margin" />
@@ -123,7 +123,7 @@
         <!-- The EPUB reader, on the Readium toolkit. Its own activity, as the plan says. -->
         <activity
             android:name=".ui.reading.epub.EpubReaderActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Margin"
@@ -132,7 +132,7 @@
         <!-- The PDF reader: one screen of a page at a time, with ink on top. -->
         <activity
             android:name=".ui.reading.pdf.PdfReaderActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Margin"
@@ -144,7 +144,7 @@
         -->
         <activity
             android:name=".ui.ink.InkNoteActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Margin" />
@@ -157,7 +157,7 @@
         <activity
             android:name=".ui.split.BesideActivity"
             android:taskAffinity="${applicationId}.beside"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale|density"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.Margin"

@@ -158,4 +158,35 @@ class BackupArchiveTest {
         assertEquals("ok", target.readText("notes/a note with spaces.md"))
         assertEquals("ok too", target.readText("notes/folder with spaces/another.md"))
     }
+
+    @Test
+    fun `a file that cannot be read is skipped and leaves no empty entry`() {
+        source.writeText("notes/good.md", "good")
+        source.writeText("notes/bad.md", "bad")
+
+        val zipped = ByteArrayOutputStream()
+        val backup = BackupArchive.backup(UnreadableStore(source, "notes/bad.md"), zipped)
+        assertEquals(1, backup.fileCount)
+        assertEquals(listOf("notes/bad.md"), backup.skipped)
+
+        target.writeText("notes/bad.md", "the real one")
+        BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+        assertEquals("the real one", target.readText("notes/bad.md"))
+        assertEquals("good", target.readText("notes/good.md"))
+    }
+
+    @Test
+    fun `a zip that ends early reports what it restored`() {
+        source.writeText("notes/a.md", "first")
+        source.write("notes/b.bin", java.util.Random(1).let { r -> ByteArray(5000).also(r::nextBytes) })
+        val zipped = ByteArrayOutputStream()
+        BackupArchive.backup(source, zipped)
+        val bytes = zipped.toByteArray()
+
+        val result = BackupArchive.restore(target, ByteArrayInputStream(bytes.copyOf(bytes.size - 2000)))
+
+        assertTrue(result.stoppedEarly)
+        assertEquals(1, result.fileCount)
+        assertEquals("first", target.readText("notes/a.md"))
+    }
 }

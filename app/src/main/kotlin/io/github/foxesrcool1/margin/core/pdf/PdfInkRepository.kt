@@ -8,6 +8,7 @@ import io.github.foxesrcool1.margin.core.json.jsonOf
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
+import java.io.IOException
 
 private const val TAG = "PdfInkRepository"
 
@@ -33,8 +34,12 @@ data class AnnotatedPage(val pageNumber: Int, val strokeCount: Int)
 class PdfInkRepository(private val data: DataRepository, private val bookId: String) {
 
     fun load(pageNumber: Int): PageInkLoad {
-        val bytes = data.store.readBytes(StorageLayout.strokesPath(bookId, pageNumber))
-            ?: return PageInkLoad.Loaded(emptyList())
+        val bytes = try {
+            data.store.readBytesOrThrow(StorageLayout.strokesPath(bookId, pageNumber))
+        } catch (problem: IOException) {
+            AppLog.e(TAG, "Ink of $bookId page $pageNumber could not be read", problem)
+            return PageInkLoad.Damaged("The file could not be read")
+        } ?: return PageInkLoad.Loaded(emptyList())
         if (bytes.isEmpty()) return PageInkLoad.Loaded(emptyList())
         return try {
             PageInkLoad.Loaded(StrokesCodec.decode(bytes))

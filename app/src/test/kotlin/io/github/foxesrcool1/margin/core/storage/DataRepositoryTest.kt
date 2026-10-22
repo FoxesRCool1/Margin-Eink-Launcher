@@ -195,4 +195,31 @@ class DataRepositoryTest {
         // One day, even with two files in it.
         assertEquals(listOf(day), data.journalDatesIn(2026))
     }
+
+    @Test
+    fun `a different book with the same name and size is kept, not dropped`() {
+        repository.importBook(ByteArray(10) { 1 }.inputStream(), "scan.pdf", sizeHintBytes = 10)
+        val second = repository.importBook(ByteArray(10) { 2 }.inputStream(), "scan.pdf", sizeHintBytes = 10)
+        assertTrue(second is ImportResult.Imported)
+        assertEquals(2, repository.listBooks().size)
+    }
+
+    @Test
+    fun `the same book with a size hint is still found already there`() {
+        repository.importBook(ByteArray(10) { 1 }.inputStream(), "scan.pdf", sizeHintBytes = 10)
+        val second = repository.importBook(ByteArray(10) { 1 }.inputStream(), "scan.pdf", sizeHintBytes = 10)
+        assertTrue(second is ImportResult.AlreadyThere)
+        assertEquals(1, repository.listBooks().size)
+    }
+
+    @Test
+    fun `one broken file is rescued once, however often it is loaded`() {
+        store.writeText("habits/habits.json", "{ broken one")
+        repeat(3) { repository.keepUnreadable("habits/habits.json", "habits/habits.unreadable.json") }
+        store.writeText("habits/habits.json", "{ broken two!")
+        repeat(3) { repository.keepUnreadable("habits/habits.json", "habits/habits.unreadable.json") }
+
+        val copies = store.list("habits").filter { it.name.startsWith("habits.unreadable") }
+        assertEquals(2, copies.size)
+    }
 }

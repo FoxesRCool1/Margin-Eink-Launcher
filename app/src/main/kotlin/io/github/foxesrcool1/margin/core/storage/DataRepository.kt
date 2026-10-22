@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.core.storage
 import io.github.foxesrcool1.margin.core.log.AppLog
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.time.LocalDate
 
 private const val TAG = "DataRepository"
@@ -62,24 +63,20 @@ class DataRepository(val store: FileStore) {
         if (store.exists(target)) {
             // The same name is not the same book. Two scans can both be called
             // "scan.pdf", and a picker that gives no name makes every file
-            // "book.epub". The size tells them apart. When nobody said the
-            // size, the file is copied in under a free name first and looked
-            // at then.
+            // "book.epub". The file is copied in under a free name first, and
+            // looked at then: only the same size and the same bytes make it
+            // the same book.
             val existingSize = store.sizeOf(target)
             val existing = ImportResult.AlreadyThere(
                 target,
                 StorageLayout.bookIdFor(RelativePaths.nameOf(target), existingSize),
             )
-            if (sizeHintBytes > 0 && sizeHintBytes == existingSize) {
-                AppLog.i(TAG, "Book already imported: $target")
-                return existing
-            }
             val beside = freePath(target)
             if (!store.writeFrom(beside, input)) {
                 AppLog.e(TAG, "Import failed for $displayName")
                 return ImportResult.Failed("The file could not be copied into the data folder")
             }
-            if (store.sizeOf(beside) == existingSize) {
+            if (store.sizeOf(beside) == existingSize && sameContent(beside, target)) {
                 store.delete(beside)
                 AppLog.i(TAG, "Book already imported: $target")
                 return existing
@@ -105,6 +102,25 @@ class DataRepository(val store: FileStore) {
         AppLog.i(TAG, "Imported $target as $id ($size bytes)")
         return ImportResult.Imported(target, id)
     }
+
+    /** True when both files hold the same bytes. Streamed through SHA-256, so a big book is not held in memory. */
+    private fun sameContent(a: String, b: String): Boolean {
+        val first = sha256(a) ?: return false
+        return first.contentEquals(sha256(b))
+    }
+
+    private fun sha256(path: String): ByteArray? = runCatching {
+        val digest = MessageDigest.getInstance("SHA-256")
+        store.openInput(path)?.use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+            digest.digest()
+        }
+    }.getOrNull()
 
     fun deleteBook(relativePath: String): Boolean = store.delete(relativePath)
 
@@ -132,7 +148,16 @@ class DataRepository(val store: FileStore) {
     fun keepUnreadable(relativePath: String, rescuePath: String) {
         runCatching {
             if (!store.exists(relativePath)) return
-            if (store.exists(rescuePath) && store.sizeOf(rescuePath) == store.sizeOf(relativePath)) return
+            // Every copy kept so far, "X.unreadable.json" and "X.unreadable 2.json".
+            // The same bytes as any of them: nothing more to keep.
+            val parent = RelativePaths.parentOf(rescuePath)
+            val name = RelativePaths.nameOf(rescuePath)
+            val stem = name.substringBeforeLast('.', name)
+            val suffix = name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
+            val numbered = Regex("${Regex.escape(stem)} \\d+${Regex.escape(suffix)}")
+            val broken = store.readBytes(relativePath) ?: return
+            val copies = store.list(parent).filter { !it.isDirectory && (it.name == name || numbered.matches(it.name)) }
+            if (copies.any { it.sizeBytes == store.sizeOf(relativePath) && store.readBytes(it.relativePath).contentEquals(broken) }) return
             val kept = freePath(rescuePath)
             if (store.copy(relativePath, kept)) AppLog.e(TAG, "$relativePath could not be read. A copy was kept as $kept")
         }.onFailure { AppLog.w(TAG, "Could not keep a copy of $relativePath", it) }

@@ -131,7 +131,9 @@ private fun readBackup(context: Context, uri: Uri): String {
             ?: return "Could not open the file"
         stream.use { input ->
             val result = repository.restoreFrom(input)
-            if (result.refused.isEmpty()) {
+            if (result.stoppedEarly) {
+                "Restored ${result.fileCount} files. The zip ended early."
+            } else if (result.refused.isEmpty()) {
                 "Restored ${result.fileCount} files"
             } else {
                 "Restored ${result.fileCount} files, ${result.refused.size} refused"

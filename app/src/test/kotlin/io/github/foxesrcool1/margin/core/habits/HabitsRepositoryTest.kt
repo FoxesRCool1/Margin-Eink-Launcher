@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.core.habits
 
+import io.github.foxesrcool1.margin.core.storage.UnreadableStore
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
@@ -174,5 +175,27 @@ class HabitsRepositoryTest {
         assertEquals(listOf("read"), document.habits.map { it.id })
         assertFalse(document.habits.single().archived)
         assertEquals(setOf(today.minusDays(1)), habits.datesFor("read"))
+    }
+
+    @Test
+    fun `a log that cannot be read is not written over`() {
+        habits.toggle("read", today)
+        val before = store.readText(StorageLayout.habitLogPath())
+
+        val blind = HabitsRepository(DataRepository(UnreadableStore(store, StorageLayout.habitLogPath())))
+        blind.toggle("read", today.minusDays(1))
+
+        assertEquals(before, store.readText(StorageLayout.habitLogPath()))
+    }
+
+    @Test
+    fun `a habit list that cannot be read is not written over`() {
+        habits.add("Read", today)
+        val before = store.readText(StorageLayout.habitsPath())
+
+        val blind = HabitsRepository(DataRepository(UnreadableStore(store, StorageLayout.habitsPath())))
+        blind.add("Walk", today)
+
+        assertEquals(before, store.readText(StorageLayout.habitsPath()))
     }
 }

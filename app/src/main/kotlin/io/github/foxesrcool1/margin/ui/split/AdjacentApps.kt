@@ -38,6 +38,14 @@ object AdjacentApps {
     private const val EXTRA_PACKAGE = "beside_package"
     private const val EXTRA_CLASS = "beside_class"
     private const val EXTRA_LABEL = "beside_label"
+    private const val EXTRA_AT = "beside_at"
+
+    /**
+     * A request older than this is dead. After the process dies, Android gives
+     * the screen its first intent back, extras and all, and removing them from
+     * the copy in memory does not change that one.
+     */
+    private const val REQUEST_LIFETIME_MILLIS = 15_000L
 
     /** The app of the last try, until the screen that asked comes back and checks. */
     private var tried: LauncherEntry? = null
@@ -58,6 +66,7 @@ object AdjacentApps {
                     .putExtra(EXTRA_PACKAGE, entry.packageName)
                     .putExtra(EXTRA_CLASS, entry.className)
                     .putExtra(EXTRA_LABEL, entry.label)
+                    .putExtra(EXTRA_AT, System.currentTimeMillis())
                 AppLog.i(TAG, "Moving ${keeper.component?.shortClassName} to a task of its own, to put ${entry.key} beside it")
                 return runCatching {
                     activity.startActivity(keeper)
@@ -78,6 +87,8 @@ object AdjacentApps {
             from.getStringExtra(key)?.let { to.putExtra(key, it) }
             from.removeExtra(key)
         }
+        to.putExtra(EXTRA_AT, from.getLongExtra(EXTRA_AT, 0L))
+        from.removeExtra(EXTRA_AT)
     }
 
     /**
@@ -89,7 +100,12 @@ object AdjacentApps {
         val packageName = intent.getStringExtra(EXTRA_PACKAGE) ?: return
         val className = intent.getStringExtra(EXTRA_CLASS) ?: return
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty()
-        listOf(EXTRA_PACKAGE, EXTRA_CLASS, EXTRA_LABEL).forEach(intent::removeExtra)
+        val askedAt = intent.getLongExtra(EXTRA_AT, 0L)
+        listOf(EXTRA_PACKAGE, EXTRA_CLASS, EXTRA_LABEL, EXTRA_AT).forEach(intent::removeExtra)
+        if (System.currentTimeMillis() - askedAt > REQUEST_LIFETIME_MILLIS) {
+            AppLog.i(TAG, "Dropped an old request for $packageName. The screen was probably restored.")
+            return
+        }
         val entry = LauncherEntry(packageName = packageName, className = className, label = label)
         // After this frame, so Android has this task on screen before the app joins it.
         activity.window.decorView.post { launchBeside(activity, entry) }

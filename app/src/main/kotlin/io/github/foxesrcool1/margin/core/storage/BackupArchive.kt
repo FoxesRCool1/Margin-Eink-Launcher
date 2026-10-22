@@ -1,10 +1,14 @@
 package io.github.foxesrcool1.margin.core.storage
 
+import io.github.foxesrcool1.margin.core.log.AppLog
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+
+private const val TAG = "BackupArchive"
 
 /** What a backup wrote. */
 data class BackupResult(
@@ -19,6 +23,8 @@ data class RestoreResult(
     val byteCount: Long,
     /** Entries the archive held that were refused. See [BackupArchive.restore]. */
     val refused: List<String>,
+    /** True when the zip was damaged or cut short. The files counted above were still restored. */
+    val stoppedEarly: Boolean = false,
 )
 
 /**
@@ -53,11 +59,18 @@ object BackupArchive {
 
             folders.forEach { folder ->
                 store.listFilesRecursively(folder).forEach { entry ->
+                    // Open the file first. An entry added before a failed read
+                    // would stay in the zip empty, and a restore would then
+                    // write that empty file over the real one.
+                    // ponytail: a read that fails half way still leaves a short entry.
                     val written = runCatching {
-                        zip.putNextEntry(ZipEntry(entry.relativePath))
-                        val ok = store.copyTo(entry.relativePath, zip)
-                        zip.closeEntry()
-                        ok
+                        val input = store.openInput(entry.relativePath) ?: return@runCatching false
+                        input.use {
+                            zip.putNextEntry(ZipEntry(entry.relativePath))
+                            it.copyTo(zip)
+                            zip.closeEntry()
+                        }
+                        true
                     }.getOrDefault(false)
 
                     if (written) {
@@ -93,46 +106,54 @@ object BackupArchive {
         var fileCount = 0
         var byteCount = 0L
         val refused = mutableListOf<String>()
+        var stoppedEarly = false
 
         ZipInputStream(input.buffered()).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                val rawName = entry.name
+            // A zip that is cut short throws in the middle of the loop, after
+            // earlier files were already replaced. Report what was done.
+            try {
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val rawName = entry.name
 
-                if (entry.isDirectory || rawName == MANIFEST_NAME) {
+                    if (entry.isDirectory || rawName == MANIFEST_NAME) {
+                        zip.closeEntry()
+                        continue
+                    }
+
+                    val safePath = runCatching { RelativePaths.normalise(rawName) }.getOrNull()
+                    val topFolder = safePath?.substringBefore('/')
+
+                    if (safePath == null || safePath.isEmpty() || topFolder !in folders) {
+                        refused += rawName
+                        zip.closeEntry()
+                        continue
+                    }
+
+                    if (!overwrite && store.exists(safePath)) {
+                        refused += rawName
+                        zip.closeEntry()
+                        continue
+                    }
+
+                    // The stream must not be closed here: the zip stream carries
+                    // every entry, so closing it would end the whole restore.
+                    val written = store.writeFrom(safePath, NonClosingInputStream(zip))
+                    if (written) {
+                        fileCount++
+                        byteCount += store.sizeOf(safePath)
+                    } else {
+                        refused += rawName
+                    }
                     zip.closeEntry()
-                    continue
                 }
-
-                val safePath = runCatching { RelativePaths.normalise(rawName) }.getOrNull()
-                val topFolder = safePath?.substringBefore('/')
-
-                if (safePath == null || safePath.isEmpty() || topFolder !in folders) {
-                    refused += rawName
-                    zip.closeEntry()
-                    continue
-                }
-
-                if (!overwrite && store.exists(safePath)) {
-                    refused += rawName
-                    zip.closeEntry()
-                    continue
-                }
-
-                // The stream must not be closed here: the zip stream carries
-                // every entry, so closing it would end the whole restore.
-                val written = store.writeFrom(safePath, NonClosingInputStream(zip))
-                if (written) {
-                    fileCount++
-                    byteCount += store.sizeOf(safePath)
-                } else {
-                    refused += rawName
-                }
-                zip.closeEntry()
+            } catch (problem: IOException) {
+                AppLog.e(TAG, "The backup zip ended early", problem)
+                stoppedEarly = true
             }
         }
 
-        return RestoreResult(fileCount, byteCount, refused)
+        return RestoreResult(fileCount, byteCount, refused, stoppedEarly)
     }
 
     /** Reads a zip entry without letting the reader close the archive. */

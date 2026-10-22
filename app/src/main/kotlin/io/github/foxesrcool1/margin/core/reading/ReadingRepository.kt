@@ -4,6 +4,7 @@ import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.RelativePaths
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
+import java.io.IOException
 import java.time.LocalDate
 
 private const val TAG = "ReadingRepository"
@@ -17,8 +18,8 @@ class ReadingRepository(private val data: DataRepository) {
             // Keep the unreadable file. The next save would otherwise write
             // an empty one over notes that a person could still rescue.
             val rescue = "${StorageLayout.ANNOTATIONS}/${StorageLayout.safeName(bookId)}.unreadable.json"
-            data.store.copy(StorageLayout.annotationsPath(bookId), data.freePath(rescue))
-            AppLog.e(TAG, "Annotations of $bookId could not be read. A copy was kept as $rescue")
+            data.keepUnreadable(StorageLayout.annotationsPath(bookId), rescue)
+            AppLog.e(TAG, "Annotations of $bookId could not be read.")
             BookAnnotations()
         }
     }
@@ -47,7 +48,14 @@ class ReadingRepository(private val data: DataRepository) {
     fun addReadingTime(bookId: String, date: LocalDate, seconds: Long) {
         if (seconds <= 0) return
         val path = StorageLayout.readingLogPath()
-        val before = data.store.readText(path)?.trimEnd().orEmpty().ifEmpty { ReadingLog.HEADER }
+        val old = try {
+            data.store.readTextOrThrow(path)
+        } catch (problem: IOException) {
+            // Writing now would start the log again and lose every day in it.
+            AppLog.e(TAG, "The reading log could not be read. $seconds seconds were not added.", problem)
+            return
+        }
+        val before = old?.trimEnd().orEmpty().ifEmpty { ReadingLog.HEADER }
         val after = before + "\n" + ReadingLog.line(ReadingLog.Entry(date, bookId, seconds)) + "\n"
         if (!data.store.writeText(path, after)) AppLog.w(TAG, "Could not write the reading log")
     }

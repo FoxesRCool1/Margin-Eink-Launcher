@@ -56,7 +56,10 @@ import io.github.foxesrcool1.margin.design.components.rememberPagedListState
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.design.icons.LucideIcon
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val TAG = "AppsScreen"
@@ -143,15 +146,29 @@ fun AppsScreen(
             val ways = withContext(AppDispatchers.io) { repository.escapeEntries(loaded) }
             apps = loaded
             escapes = ways
+            // An uninstalled app would keep a pin: it counts toward the limit
+            // and has no row to unpin it from. An empty list is not trusted,
+            // it may be a failed query. Folders keep their keys on purpose.
+            if (loaded.isNotEmpty()) {
+                val installed = loaded.mapTo(HashSet()) { it.key }
+                val pinned = settings.pinnedApps.first()
+                if (pinned.any { it !in installed }) settings.setPinnedApps(pinned.filter { it in installed })
+            }
         }
     }
 
+    // One change at a time, or two quick taps could land on screen out of order.
+    val folderChanges = remember { Mutex() }
     fun changeFolders(transform: (AppFolders) -> AppFolders) {
         if (previewFolders != null) {
             folders = transform(folders)
             return
         }
-        scope.launch { folders = withContext(AppDispatchers.io) { folderStore.change(transform) } }
+        scope.launch {
+            folderChanges.withLock {
+                folders = withContext(AppDispatchers.io) { folderStore.change(transform) }
+            }
+        }
     }
 
     val byKey = remember(apps) { apps.associateBy { it.key } }

@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.core.habits
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
+import java.io.IOException
 import java.time.LocalDate
 
 private const val TAG = "HabitsRepository"
@@ -30,8 +31,20 @@ class HabitsRepository(private val data: DataRepository) {
         val LOCK = Any()
     }
 
-    fun load(): HabitsDocument {
-        val text = data.store.readText(StorageLayout.habitsPath())
+    fun load(): HabitsDocument = read() ?: HabitsDocument(emptyList(), DayBoundary.DEFAULT_HOUR)
+
+    /**
+     * The document, or null when the file is there and could not be read.
+     * A change must stop on null: writing the empty list that [load] shows
+     * would wipe every habit the user has.
+     */
+    private fun read(): HabitsDocument? {
+        val text = try {
+            data.store.readTextOrThrow(StorageLayout.habitsPath())
+        } catch (problem: IOException) {
+            AppLog.e(TAG, "habits.json could not be read. Nothing was changed.", problem)
+            return null
+        }
         if (text == null) return HabitsDocument(emptyList(), DayBoundary.DEFAULT_HOUR)
 
         val parsed = HabitsFile.parse(text)
@@ -49,7 +62,7 @@ class HabitsRepository(private val data: DataRepository) {
         data.store.writeText(StorageLayout.habitsPath(), HabitsFile.serialise(document))
 
     fun add(name: String, today: LocalDate): HabitsDocument = synchronized(LOCK) {
-        val current = load()
+        val current = read() ?: return@synchronized load()
 
         // The Journal has no list of archived habits. Adding one again by its
         // name is the way back, and it comes back with the days it was done,
@@ -72,7 +85,7 @@ class HabitsRepository(private val data: DataRepository) {
     }
 
     fun rename(habitId: String, newName: String): HabitsDocument = synchronized(LOCK) {
-        val current = load()
+        val current = read() ?: return@synchronized load()
         val next = current.copy(
             habits = current.habits.map { habit ->
                 if (habit.id == habitId) habit.copy(name = newName.trim()) else habit
@@ -90,7 +103,7 @@ class HabitsRepository(private val data: DataRepository) {
      * record of a year of work to one tap.
      */
     fun setArchived(habitId: String, archived: Boolean): HabitsDocument = synchronized(LOCK) {
-        val current = load()
+        val current = read() ?: return@synchronized load()
         val next = current.copy(
             habits = current.habits.map { habit ->
                 if (habit.id == habitId) habit.copy(archived = archived) else habit
@@ -103,13 +116,21 @@ class HabitsRepository(private val data: DataRepository) {
 
     fun setDayBoundaryHour(hour: Int): HabitsDocument = synchronized(LOCK) {
         require(hour in 0..23) { "The day boundary must be an hour of the day" }
-        val next = load().copy(dayBoundaryHour = hour)
+        val next = (read() ?: return@synchronized load()).copy(dayBoundaryHour = hour)
         save(next)
         next
     }
 
-    fun loadMarks(): List<HabitMark> {
-        val text = data.store.readText(StorageLayout.habitLogPath()) ?: return emptyList()
+    fun loadMarks(): List<HabitMark> = readMarks() ?: emptyList()
+
+    /** The marks, or null when the log is there and could not be read. See [read]. */
+    private fun readMarks(): List<HabitMark>? {
+        val text = try {
+            data.store.readTextOrThrow(StorageLayout.habitLogPath())
+        } catch (problem: IOException) {
+            AppLog.e(TAG, "log.csv could not be read. Nothing was changed.", problem)
+            return null
+        } ?: return emptyList()
         return HabitLogFile.parse(text)
     }
 
@@ -118,7 +139,8 @@ class HabitsRepository(private val data: DataRepository) {
 
     /** Marks a day done, or takes the mark off again. Returns the new state. */
     fun toggle(habitId: String, date: LocalDate): Boolean = synchronized(LOCK) {
-        val marks = loadMarks().toMutableList()
+        // Unreadable log: change nothing, and say the day is not done.
+        val marks = (readMarks() ?: return@synchronized false).toMutableList()
         val mark = HabitMark(habitId, date)
 
         val nowDone = if (marks.remove(mark)) {

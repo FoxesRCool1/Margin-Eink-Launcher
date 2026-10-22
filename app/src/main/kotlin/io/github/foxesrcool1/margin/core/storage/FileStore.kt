@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.core.storage
 
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -50,6 +51,22 @@ interface FileStore {
     fun readBytes(relativePath: String): ByteArray?
 
     fun readText(relativePath: String): String?
+
+    /**
+     * Like [readBytes], but a file that is there and cannot be read throws
+     * an [IOException]. Null means the file is not there. A caller that reads
+     * a file, changes it and writes it back must use this one: with
+     * [readBytes] it cannot tell "missing" from "broken" and would write over
+     * the real file.
+     */
+    @Throws(IOException::class)
+    fun readBytesOrThrow(relativePath: String): ByteArray? =
+        readBytes(relativePath) ?: if (exists(relativePath)) throw IOException("Could not read $relativePath") else null
+
+    /** The text version of [readBytesOrThrow]. */
+    @Throws(IOException::class)
+    fun readTextOrThrow(relativePath: String): String? =
+        readText(relativePath) ?: if (exists(relativePath)) throw IOException("Could not read $relativePath") else null
 
     /**
      * Writes the whole file, or leaves the old one alone.
