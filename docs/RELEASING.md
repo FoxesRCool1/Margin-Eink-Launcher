@@ -2,7 +2,7 @@
 
 A release is a set of APK files on the GitHub Releases page. A GitHub Actions
 workflow makes them when a tag is pushed. The app on the tablet finds the
-release by itself: Settings, Updates, "Check for updates".
+release by itself: Settings, About, Updates.
 
 ## Each release: one command
 
@@ -75,7 +75,7 @@ only after a check fails with "not found".
 
 If you need it: on GitHub make a fine-grained personal access token for that
 one repository with "Contents" set to "Read-only", then on the tablet,
-Settings, Updates, "Check for updates", "Enter access token". Such a token can
+Settings, About, Updates, "Enter access token". Such a token can
 read the source of that repository, so give it an expiry date. It is kept in
 the private storage of the app, outside every backup, it is never written to
 the log, and it is only ever sent to `api.github.com`.
@@ -145,7 +145,7 @@ Android will not install.
 
 - Moving a tablet from a debug build to the release build means an
   uninstall, and an uninstall deletes the data folder. Back up first:
-  Settings, "Backup and files", "Back up". Restore after the new install.
+  Settings, Files, Back Up. Restore after the new install.
 - Right after an update Android may show the stock launcher, because for a
   moment this app was not there to be the home screen. Press the Home key.
 - A build from the dev machine and a build from GitHub of the same version

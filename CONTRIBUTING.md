@@ -82,7 +82,7 @@ Open that address in the browser of the tablet.
 
 ## Report a problem
 
-Open an issue. Attach the log: Settings, Help, Log, then the download icon.
+Open an issue. Attach the log: Settings, About, Log, then the download icon.
 The files go to the `Download/Margin` folder. Say which
 tablet, which version (Settings shows it at the top), and what you did just
 before. The log holds the vendor calls that worked and did not, which is the

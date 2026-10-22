@@ -42,14 +42,16 @@ apps. Every note is a plain file in one folder.
 
 ## What it does
 
-- **Home.** The date and time, battery, Wi-Fi, the next item of your
-  routine, and a quick note.
+- **Home.** A big clock and the date. A Continue line that takes you back
+  to the book or note you had open. The routine item for this part of the
+  day, morning, afternoon or evening. A quick note, and Wi-Fi in one tap.
 - **Read.** EPUB and PDF books, one page at a time. Highlights, and notes
   typed or by pen. Write on a PDF page with the pen. A reading timer.
-- **Write.** Typed notes in Markdown, and handwritten notebooks on blank,
-  lined or dot grid pages. Export to PDF and PNG.
-- **Journal.** One entry a day, typed or handwritten. A month view, habits
-  and a daily routine.
+- **Write.** Typed notes in Markdown that turn a page at a time, and
+  handwritten notebooks on blank, lined or dot grid pages. Export to PDF and
+  PNG.
+- **Journal.** One entry a day, typed or handwritten, with a daily word goal
+  if you want one. A month view, habits and a daily routine.
 - **Apps.** Up to eight pinned apps, your own folders, and all apps from A
   to Z. Search for an app, or hide it.
 - **Split screen.** Open a note beside a book, or any page beside another.
@@ -80,7 +82,7 @@ the install file of an Android app.)
 
 ### Make it the home screen
 
-In Margin, go to Settings, Home app, "Set as home app", and choose Margin.
+In Margin, go to Settings, Screen, "Set as Home App", and choose Margin.
 
 Some ViWoods firmware hides this choice. Then Margin shows you the steps to
 do it another way.
@@ -93,7 +95,7 @@ home app again the same way, or uninstall Margin.
 
 ### Updates
 
-Go to Settings, Updates, "Check for updates". If there is a new version, one
+Go to Settings, About, Updates. If there is a new version, one
 press downloads and installs it. Your books, notes and settings stay.
 
 After an update, Android may show the stock launcher once. Press the Home
@@ -101,8 +103,8 @@ key.
 
 **Had a test version before 1.0.0?** It cannot update to 1.0.0, because the
 test versions were signed with a different key. Back up in the old app
-(Settings, Backup and files, "Back up"). Uninstall it. Install 1.0.0. Then
-restore (Settings, Backup and files, "Restore").
+(Settings, Files, Back Up). Uninstall it. Install 1.0.0. Then
+restore (Settings, Files, Restore).
 
 ### A faster pen on ViWoods
 
@@ -129,7 +131,7 @@ Typed notes are Markdown. A handwritten note is a zip file with the strokes
 and a PNG picture of each page.
 
 **If you uninstall Margin, Android deletes this folder.** Back up first:
-Settings, Backup and files, "Back up". It saves everything in one zip file.
+Settings, Files, Back Up. It saves everything in one zip file.
 
 ## Privacy and safety
 
