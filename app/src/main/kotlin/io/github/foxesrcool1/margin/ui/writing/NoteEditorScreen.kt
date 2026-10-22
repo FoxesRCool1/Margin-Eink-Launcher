@@ -1,10 +1,12 @@
 package io.github.foxesrcool1.margin.ui.writing
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import io.github.foxesrcool1.margin.design.components.EinkTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -14,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -32,6 +35,8 @@ import io.github.foxesrcool1.margin.core.storage.RelativePaths
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.IconPressButton
+import io.github.foxesrcool1.margin.design.components.TextPages
 import io.github.foxesrcool1.margin.design.components.einkFieldBorder
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
@@ -301,12 +306,14 @@ fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier, focusOnOpen: Bo
             keyboard?.show()
         }
     }
+    val pages = remember { TextPages() }
     Column(modifier = modifier) {
         EinkTextField(
             value = editor.text,
             onValueChange = editor.onText,
             textStyle = EinkType.reading,
             enabled = editor.loaded,
+            pages = pages,
             modifier = Modifier
                 .focusRequester(focus)
                 .fillMaxWidth()
@@ -316,9 +323,35 @@ fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier, focusOnOpen: Bo
         )
         Spacer(modifier = Modifier.height(8.dp))
         val words = editor.words
-        CapsLabel(
-            text = "$words ${if (words == 1) "word" else "words"}  .  ${editor.status}",
-            style = EinkType.capsSmall.copy(color = EinkColors.Faded),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CapsLabel(
+                text = "$words ${if (words == 1) "word" else "words"}  .  ${editor.status}",
+                style = EinkType.capsSmall.copy(color = EinkColors.Faded),
+                modifier = Modifier.weight(1f),
+            )
+            // A note longer than the box is read a page at a time.
+            if (pages.count > 1) {
+                CapsLabel(
+                    text = "${pages.index + 1} / ${pages.count}",
+                    style = EinkType.capsSmall,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                IconPressButton(
+                    icon = Lucide.ChevronLeft,
+                    label = "Previous page",
+                    onClick = pages::previous,
+                    enabled = pages.index > 0,
+                    bordered = true,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconPressButton(
+                    icon = Lucide.ChevronRight,
+                    label = "Next page",
+                    onClick = pages::next,
+                    enabled = pages.index < pages.count - 1,
+                    bordered = true,
+                )
+            }
+        }
     }
 }

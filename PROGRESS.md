@@ -4,6 +4,49 @@ One section per step. Newest step at the top.
 
 ---
 
+## Typed notes turn pages instead of scrolling
+
+Date: 2026-10-22. Branch `Dev`. Decision 0011, "What is left", item 1.
+
+### What was done
+
+1. `EinkTextField` (fields of many lines): the text always rests on a whole
+   page. A page is the box height in whole lines, less two lines of overlap.
+   The field follows the cursor as before, then snaps at once to the page
+   that has the cursor line near its top. One jump, not a line at a time. No
+   animation. Blank room under the text lets the last page start at the
+   cursor. The note file is not changed.
+2. `TextPages` (optional `pages` parameter): page, page count, `next()` and
+   `previous()`. Default call sites are unchanged.
+3. The typed note editor (full screen and the split half): when the note is
+   longer than the box, the line under it also shows "2 / 3" and two buttons,
+   Previous page and Next page. The cursor does not move. Hidden when the
+   note fits.
+4. The Journal entry box snaps too. It has no page buttons.
+5. Tests: `EinkTextFieldTest` (rests on pages while typing, `next` and
+   `previous` clamp, a short text has one page). Screenshots:
+   `typed_note_page2`, `split_note_page2` (and `_land`).
+
+### What does not work yet
+
+- A finger drag on the field springs back to the page. Use the buttons.
+- A box that is not a whole number of lines tall shows a part of a line at the
+  bottom edge.
+- The split half 320 dp wide shortens the status word to "RE..." when the page
+  buttons are on.
+
+### Device test list
+
+1. Open a long typed note. Type past the bottom of the box. The text jumps
+   once, with the cursor near the top of the new page. It must not creep.
+2. Press Next page and Previous page. The page number changes, the cursor
+   does not move, the buttons grey out at the ends.
+3. Delete text until the note fits in the box. The buttons go away.
+4. Journal, type a long entry. It jumps the same way and nothing is cut.
+5. Open a long note in the split half. Same checks.
+
+---
+
 ## A QA pass in the emulator: Back, quick notes, keyboard, Wi-Fi
 
 Date: 2026-10-22. Branch `Dev`.

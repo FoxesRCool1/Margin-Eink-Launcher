@@ -769,6 +769,23 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         capture("typed_note")
     }
 
+    private fun longNote(): String {
+        val notes = NotesRepository(DataRoot.repository(context))
+        val path = notes.createNote(notes.rootPath, "Long letter")!!
+        notes.write(path, "# Long letter\n\n" + (1..30).joinToString("\n\n") { "Paragraph $it of the letter. The garden is full of apples this year." })
+        return path
+    }
+
+    /** A note longer than its box: the second page, with the page controls. */
+    @Test
+    fun typedNoteSecondPage() {
+        val path = longNote()
+        compose.setContent { EinkTheme { NoteEditorScreen(notePath = path, onClose = {}) } }
+        waitForText("Paragraph 1 ")
+        compose.onNodeWithContentDescription("Next page").performClick()
+        capture("typed_note_page2")
+    }
+
     @Test
     fun inkNote() {
         val data = DataRoot.repository(context)
@@ -964,6 +981,16 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     @Test
     fun splitSettingsInTheSecondHalf() = split(PanePage.Tab(LauncherRoute.Settings), "split_settings_pane") {
         AppsScreen(onBack = {}, previewApps = fewApps, previewFolders = someFolders)
+    }
+
+    @Test
+    fun splitLongTypedNoteOnItsSecondPage() {
+        val path = longNote()
+        split(PanePage.TypedNote(path), "split_note_page2", waitFor = "Paragraph 1 ") {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) { EinkText("Main half", style = EinkType.body) }
+        }
+        compose.onNodeWithContentDescription("Next page").performClick()
+        capture("split_note_page2")
     }
 
     @Test

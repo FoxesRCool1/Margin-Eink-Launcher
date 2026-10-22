@@ -5,12 +5,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
+import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -28,6 +31,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkType
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * A text field with a cursor that does not blink.
@@ -55,6 +60,12 @@ fun EinkTextField(
      * doing nothing, as before.
      */
     onSubmit: (() -> Unit)? = null,
+    /**
+     * Turns a field of many lines into pages. See [TextPages]. A field of one
+     * line has no pages. Without this the field still rests on whole pages,
+     * it only does not tell anyone.
+     */
+    pages: TextPages? = null,
 ) {
     val state = rememberTextFieldState(initialText = value)
     val latestValue by rememberUpdatedState(value)
@@ -87,6 +98,54 @@ fun EinkTextField(
     var layout by remember { mutableStateOf<(() -> TextLayoutResult?)?>(null) }
     val cursorWidth = 2.dp
 
+    // Rule 2: a field of many lines does not rest between pages.
+    val padLines = remember { mutableIntStateOf(0) }
+    val padding = remember {
+        OutputTransformation { if (padLines.intValue > 0) append("\n".repeat(padLines.intValue)) }
+    }
+    if (!singleLine) {
+        val book = pages ?: remember { TextPages() }
+        LaunchedEffect(scroll, book) {
+            book.turn = { page -> book.grid?.let { scroll.dispatchRawDelta((it.offset(page) - scroll.value).toFloat()) } }
+            snapshotFlow { PageView(scroll.value, scroll.viewportSize, layout?.invoke()) }.collect { view ->
+                val result = view.layout ?: return@collect
+                if (view.viewport <= 0) return@collect
+                // The first line is a little shorter than the rest: it has no space above it.
+                val second = if (result.lineCount > 1) 1 else 0
+                val line = result.getLineBottom(second) - result.getLineTop(second)
+                if (line <= 0f) return@collect
+                val perPage = (view.viewport / line).toInt()
+                val textLines = (result.lineCount - padLines.intValue).coerceAtLeast(1)
+                val fits = result.getLineBottom((textLines - 1).coerceAtMost(result.lineCount - 1)) <= view.viewport + 1
+                val grid = PageGrid(line, perPage, textLines, fits) { i ->
+                    if (i < result.lineCount) result.getLineTop(i) else result.getLineBottom(result.lineCount - 1) + (i - result.lineCount) * line
+                }
+                book.grid = grid
+                // Room under the text, so that the last page can start at the
+                // cursor and not at the bottom of the box.
+                padLines.intValue = if (fits) 0 else perPage
+
+                val here = view.value
+                book.at = here
+                if (grid.isPage(here)) {
+                    book.index = grid.pageAt(here)
+                    return@collect
+                }
+                val selection = state.selection
+                val box = result.getCursorRect(selection.end.coerceIn(0, result.layoutInput.text.length))
+                val follows = selection.collapsed &&
+                    (abs(box.bottom - (here + view.viewport)) < line / 2 || abs(box.top - here) < line / 2)
+                val page = if (follows) {
+                    grid.pageOfLine(result.getLineForOffset(selection.end.coerceAtMost(result.layoutInput.text.length)))
+                } else {
+                    grid.nearest(here)
+                }
+                book.index = page
+                scroll.dispatchRawDelta((grid.offset(page) - here).toFloat())
+            }
+        }
+    }
+
     BasicTextField(
         state = state,
         enabled = enabled,
@@ -100,6 +159,7 @@ fun EinkTextField(
         onKeyboardAction = if (onSubmit != null) KeyboardActionHandler { latestOnSubmit?.invoke() } else null,
         cursorBrush = SolidColor(Color.Transparent),
         scrollState = scroll,
+        outputTransformation = if (singleLine) null else padding,
         onTextLayout = { getResult -> layout = getResult },
         modifier = modifier
             .onFocusChanged { focused = it.isFocused }
@@ -159,4 +219,68 @@ internal class ReportedValues(private val limit: Int = 32) {
     }
 
     fun clear() = waiting.clear()
+}
+
+
+/**
+ * The pages of a field of many lines, for a screen that wants to show them.
+ *
+ * Pass one to [EinkTextField] and read [index] and [count] from it. The field
+ * keeps them up to date. [next] and [previous] turn a page and leave the
+ * cursor where it is.
+ */
+@Stable
+class TextPages {
+
+    /** The page on show, counted from 0. */
+    var index by mutableIntStateOf(0)
+        internal set
+
+    /** Where the text rests now, in pixels. For the tests. */
+    internal var at by mutableIntStateOf(0)
+
+    internal var grid by mutableStateOf<PageGrid?>(null)
+
+    internal var turn: (Int) -> Unit = {}
+
+    /** How many pages the text fills. 1 when it all fits. */
+    val count: Int get() = grid?.count ?: 1
+
+    fun next() = turn((index + 1).coerceAtMost(count - 1))
+
+    fun previous() = turn((index - 1).coerceAtLeast(0))
+}
+
+internal class PageView(val value: Int, val viewport: Int, val layout: TextLayoutResult?)
+
+/**
+ * Where the pages of a text lie, in whole lines. A page is [perPage] lines
+ * tall and the next one starts two lines before the end of it, so the line at
+ * the bottom of one page is near the top of the next.
+ */
+internal class PageGrid(
+    private val line: Float,
+    perPage: Int,
+    textLines: Int,
+    /** All the text is on show at once. */
+    fits: Boolean,
+    /** Where line [i] starts, in pixels from the top of the text. */
+    private val lineTop: (Int) -> Float,
+) {
+
+    /** Lines from the top of one page to the top of the next. */
+    private val step = (perPage - 2).coerceAtLeast(1)
+
+    val count: Int = if (fits) 1 else (textLines - 1) / step + 1
+
+    /** Where page [page] starts, in pixels of scroll. */
+    fun offset(page: Int): Int = lineTop(page.coerceIn(0, count - 1) * step).roundToInt()
+
+    fun pageOfLine(lineIndex: Int): Int = (lineIndex / step).coerceIn(0, count - 1)
+
+    fun nearest(value: Int): Int = (value / (step * line)).roundToInt().coerceIn(0, count - 1)
+
+    fun pageAt(value: Int): Int = nearest(value)
+
+    fun isPage(value: Int): Boolean = offset(nearest(value)) == value
 }

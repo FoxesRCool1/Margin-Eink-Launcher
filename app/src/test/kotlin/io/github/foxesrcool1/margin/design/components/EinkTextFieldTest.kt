@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
+import io.github.foxesrcool1.margin.design.EinkType
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -128,6 +131,75 @@ class EinkTextFieldTest {
         text = ""
         compose.waitForIdle()
         compose.onNodeWithTag("field").assertTextEquals("")
+    }
+
+    private fun pagedField(text: String, pages: TextPages, seen: MutableList<Int>) {
+        var value by mutableStateOf(text)
+        compose.setContent {
+            EinkTheme {
+                LaunchedEffect(Unit) { snapshotFlow { pages.at }.collect { seen += it } }
+                EinkTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    textStyle = EinkType.reading,
+                    pages = pages,
+                    modifier = Modifier.fillMaxWidth().height(250.dp).testTag("field"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a long text rests on whole pages and the cursor at the end is one jump away`() {
+        val pages = TextPages()
+        pagedField("", pages, mutableListOf())
+        compose.onNodeWithTag("field").performClick()
+        // One line at a time, as a person types. Every line is its own edit.
+        val rested = mutableListOf<Int>()
+        for (n in 1..40) {
+            compose.onNodeWithTag("field").performTextInput("line $n\n")
+            compose.waitForIdle()
+            assertEquals("after line $n", pages.grid!!.offset(pages.index), pages.at)
+            rested += pages.index
+        }
+        assertEquals(true, pages.count > 3)
+        assertEquals(pages.count - 1, pages.index)
+        // Never a crawl: the page only ever moves on by one, and never back.
+        assertEquals(true, rested.zipWithNext().all { (a, b) -> b - a in 0..1 })
+        assertEquals((0 until pages.count).toList(), rested.distinct())
+    }
+
+    @Test
+    fun `next and previous move one page and stop at the ends`() {
+        val pages = TextPages()
+        val seen = mutableListOf<Int>()
+        pagedField((1..40).joinToString("\n") { "line $it" }, pages, seen)
+        compose.waitForIdle()
+        val last = pages.count - 1
+        assertEquals(true, last >= 3)
+        assertEquals(0, pages.index)
+        pages.previous()
+        compose.waitForIdle()
+        assertEquals(0, pages.at)
+        pages.next()
+        compose.waitForIdle()
+        assertEquals(1, pages.index)
+        assertEquals(pages.grid!!.offset(1), pages.at)
+        repeat(last + 3) { pages.next(); compose.waitForIdle() }
+        assertEquals(last, pages.index)
+        assertEquals(pages.grid!!.offset(last), pages.at)
+        pages.previous()
+        compose.waitForIdle()
+        assertEquals(last - 1, pages.index)
+    }
+
+    @Test
+    fun `a text that fits has one page and does not rest anywhere else`() {
+        val pages = TextPages()
+        pagedField("one\ntwo", pages, mutableListOf())
+        compose.waitForIdle()
+        assertEquals(1, pages.count)
+        assertEquals(0, pages.at)
     }
 
     @Test

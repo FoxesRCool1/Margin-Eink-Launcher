@@ -32,11 +32,20 @@ that part is on the owner's test list.
 
 ## What is left, and why
 
-1. **A long typed note scrolls inside its field.** The editor is one text
-   field, and when the text is taller than the screen the field scrolls to
-   keep the cursor in view. That breaks rule 2. The honest fix is a paged
-   editor, which is a piece of work of its own and not an audit fix. It is
-   the first thing to do after the device tests.
+1. **A long typed note scrolls inside its field.** Done. `EinkTextField`
+   keeps a field of many lines on whole pages. The page is the height of the
+   box in whole lines, less two lines, so the last lines of one page are the
+   first lines of the next. Whenever the scroll moves off a page (the field
+   following the cursor, a drag, a fling) the field puts it back on one at
+   once, with no animation. When the cursor leaves the box the result is one
+   jump to the page that has the cursor line near its top, not a crawl of one
+   line per key. To let the last page start at the cursor, the field shows
+   blank room under the text (an output transformation, the note itself is
+   not changed). `TextPages` tells a screen the page and the page count, and
+   turns pages with `next()` and `previous()`. The typed note editor shows
+   "2 / 3" and two page buttons when the note is longer than the box. A drag
+   on the field does not turn pages, it springs back: use the buttons. The
+   Journal entry gets the snapping and no buttons, its box is short.
 2. **The highlighter and the page templates are grey.** The plan asks for a
    grey highlighter. Rule 4 says grey is for large inactive text only and has
    to be tried on the panel. If it dithers badly, make the highlighter an
