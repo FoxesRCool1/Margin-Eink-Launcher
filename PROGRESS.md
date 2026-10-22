@@ -4,43 +4,50 @@ One section per step. Newest step at the top.
 
 ---
 
-## Emulator QA round 2: Continue, percent, split on the way back, Home on its side
-
----
-
-## QA round 2: Journal days, Go to page, Write in the second half, Apps rows
+## Emulator QA round 3, and three last fixes
 
 Date: 2026-10-22. Branch `Dev`.
 
 ### What was done
 
-<<<<<<< HEAD
-1. Journal: the habit and routine rows belong to the day on show. On a past
-   day they show that day's ticks, the dots end on that day, and a tap ticks
-   that day. The streak still counts from today. On today the date is still
-   worked out at the tap (the day boundary fix). On a day that has not come
-   yet the rows are faded and a tap does nothing. The routine page says the
-   day in its small title when it is not today.
-2. PDF "Go to page": the page number is selected when the box opens, so typing
-   replaces it. `EinkTextField` and `TextPromptDialog` have an optional
-   `selectAllOnOpen`, off by default.
-3. Write in the second half of the split screen: the arrow goes up one folder
-   first, and only from the top folder to the choice of pages.
-4. Apps: the names on the pinned page and on the A to Z page start at one
-   place. A row with no icon keeps the room of an icon when another row of the
-   list has one (the ways out, the hidden apps line).
+A third run in the emulator checked the fixes of round 2. Everything it
+checked worked: the split screen comes back after Back, the Journal ticks the
+day on show, long notes turn pages with no half-cut line, one percent
+everywhere, Go to page replaces the number, the Home icons stay still. No
+crash in 1500 monkey events, no "Slow:" line. Three small things were fixed
+after it:
 
-### What the owner must test on the tablet
+1. **Back on Home with a page in the second half** first takes the second
+   half back to its choice of pages. Only the next Back closes the split.
+   `SplitState.backAtHome`.
+2. **A note deleted in Write while it is open in the other half** closes
+   there. Before, typing in it made the file again. `SplitState.noteDeleted`.
+3. **The streak words show on today's page only.** On another day they
+   counted to today, which read wrong.
 
-- Journal, step back one day: the ticks are that day's. Tap a habit: only that
-  day changes. Step forward past today: the rows are grey and a tap does
-  nothing. Open Routine from a past day: same.
-- PDF, Go to page: type 42 at once. The box must show 42.
-- Split screen, Write in the second half, open a folder: the arrow goes up one
-  folder. In the top folder it goes to the choice of pages.
-- Apps, pinned page and A to Z page with some apps hidden: every name starts at
-  the same place.
-=======
+### What does not work yet
+
+- With the split side by side and the screen keyboard up, the keyboard
+  covers the last line of a long typed note and its page buttons. The
+  window is panned, not resized. Changing that changes every screen, so it
+  waits for the tablet test.
+
+### Device test list
+
+1. Split open, a note in the second half. Press Back: the second half shows
+   the choice of pages. Press Back again: the split closes.
+2. A note open in one half, Write in the other. Delete that note in Write:
+   the other half goes back to the choice of pages, and the note stays gone.
+3. Journal, go to yesterday: the habits show no "2 DAYS" there.
+
+---
+
+## Emulator QA round 2: Continue, percent, split on the way back, Home on its side
+
+Date: 2026-10-22. Branch `Dev`.
+
+### What was done
+
 1. **Continue after an empty quick note.** The editor now drops the empty
    note when its screen pauses while closing, which is before Home resumes.
    Before, Home read its Continue row first and still found the file. A tap
@@ -80,7 +87,40 @@ Date: 2026-10-22. Branch `Dev`.
 5. Press the Home key inside a note opened from a split: Home, plain.
 6. Home on its side with a routine item: the button is at the right edge,
    over the settings icon. The tab icons are centred above it.
->>>>>>> 0a53a5a (Fix Continue after an empty quick note, one shared percent, split screen restored on Back, Home on its side)
+
+---
+
+## QA round 2: Journal days, Go to page, Write in the second half, Apps rows
+
+Date: 2026-10-22. Branch `Dev`.
+
+### What was done
+
+1. Journal: the habit and routine rows belong to the day on show. On a past
+   day they show that day's ticks, the dots end on that day, and a tap ticks
+   that day. The streak still counts from today. On today the date is still
+   worked out at the tap (the day boundary fix). On a day that has not come
+   yet the rows are faded and a tap does nothing. The routine page says the
+   day in its small title when it is not today.
+2. PDF "Go to page": the page number is selected when the box opens, so typing
+   replaces it. `EinkTextField` and `TextPromptDialog` have an optional
+   `selectAllOnOpen`, off by default.
+3. Write in the second half of the split screen: the arrow goes up one folder
+   first, and only from the top folder to the choice of pages.
+4. Apps: the names on the pinned page and on the A to Z page start at one
+   place. A row with no icon keeps the room of an icon when another row of the
+   list has one (the ways out, the hidden apps line).
+
+### What the owner must test on the tablet
+
+- Journal, step back one day: the ticks are that day's. Tap a habit: only that
+  day changes. Step forward past today: the rows are grey and a tap does
+  nothing. Open Routine from a past day: same.
+- PDF, Go to page: type 42 at once. The box must show 42.
+- Split screen, Write in the second half, open a folder: the arrow goes up one
+  folder. In the top folder it goes to the choice of pages.
+- Apps, pinned page and A to Z page with some apps hidden: every name starts at
+  the same place.
 
 ---
 
