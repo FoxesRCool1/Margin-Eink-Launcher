@@ -157,8 +157,14 @@ class HabitsRepository(private val data: DataRepository) {
 
     fun datesFor(habitId: String): Set<LocalDate> = HabitLogFile.datesFor(loadMarks(), habitId)
 
-    /** Everything one row of the Journal tab needs, worked out in one read. */
-    fun summaries(today: LocalDate): List<HabitSummary> {
+    /**
+     * Everything one row of the Journal tab needs, worked out in one read.
+     *
+     * The tick and the dots belong to [day], the day on show, which is today
+     * unless the user looked at another one. The streaks always count from
+     * [today].
+     */
+    fun summaries(today: LocalDate, day: LocalDate = today): List<HabitSummary> {
         val document = load()
         val marks = loadMarks()
 
@@ -166,16 +172,16 @@ class HabitsRepository(private val data: DataRepository) {
             val dates = HabitLogFile.datesFor(marks, habit.id)
             HabitSummary(
                 habit = habit,
-                doneToday = dates.contains(today),
+                doneToday = dates.contains(day),
                 currentStreak = HabitStreaks.currentStreak(dates, today),
                 longestStreak = HabitStreaks.longestStreak(dates),
-                lastDays = HabitStreaks.lastDays(dates, today),
+                lastDays = HabitStreaks.lastDays(dates, day),
             )
         }
     }
 }
 
-/** One habit as a Journal row sees it. */
+/** One habit as a Journal row sees it. [doneToday] is for the day on show, see [HabitsRepository.summaries]. */
 data class HabitSummary(
     val habit: Habit,
     val doneToday: Boolean,

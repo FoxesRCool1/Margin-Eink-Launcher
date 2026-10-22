@@ -200,6 +200,8 @@ fun PdfReaderScreen(state: PdfUiState, actions: PdfActions) {
             title = "Go to page, 1 to ${state.pageCount}",
             initialValue = (state.pageIndex + 1).toString(),
             confirmText = "Go",
+            // Typing 42 must replace the page number that is there, not follow it.
+            selectAllOnOpen = true,
             onConfirm = { typed -> actions.goToPage(typed.trim().toIntOrNull() ?: (state.pageIndex + 1)) },
             onDismiss = { actions.show(PdfPanel.None) },
         )

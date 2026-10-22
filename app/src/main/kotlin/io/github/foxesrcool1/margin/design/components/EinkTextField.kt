@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -67,8 +68,17 @@ fun EinkTextField(
      * it only does not tell anyone.
      */
     pages: TextPages? = null,
+    /**
+     * Selects all of the starting text, so the first key typed replaces it.
+     * For a field that opens with a value in it, like the page number in
+     * "Go to page". Without this the cursor starts at the end.
+     */
+    selectAllOnOpen: Boolean = false,
 ) {
-    val state = rememberTextFieldState(initialText = value)
+    val state = rememberTextFieldState(
+        initialText = value,
+        initialSelection = TextRange(if (selectAllOnOpen) 0 else value.length, value.length),
+    )
     val latestValue by rememberUpdatedState(value)
     val latestOnChange by rememberUpdatedState(onValueChange)
     val latestOnSubmit by rememberUpdatedState(onSubmit)

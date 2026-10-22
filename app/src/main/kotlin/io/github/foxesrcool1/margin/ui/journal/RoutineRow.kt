@@ -29,6 +29,9 @@ import io.github.foxesrcool1.margin.design.icons.Lucide
  * dragging: a drag needs a moving picture under the finger, and rule 1 has no
  * exceptions.
  *
+ * A row that is not [enabled], on a day that has not come yet, is faded and a
+ * tap does nothing. The arrows and the hold still work.
+ *
  * The part of the day has no button of its own. A half of the split screen
  * is 320 dp wide, and the name, the dot and the two arrows already fill it.
  */
@@ -41,9 +44,10 @@ fun RoutineRow(
     onMove: (Int) -> Unit,
     onOptions: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    EinkRow(onClick = onToggle, onLongClick = onOptions, modifier = modifier) { pressed ->
-        val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
+    EinkRow(onClick = if (enabled) onToggle else ({}), onLongClick = onOptions, modifier = modifier) { pressed ->
+        val foreground = if (pressed) EinkColors.Paper else if (enabled) EinkColors.Ink else EinkColors.Faded
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
 
         Row(

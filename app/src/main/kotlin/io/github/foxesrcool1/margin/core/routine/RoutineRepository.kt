@@ -12,7 +12,7 @@ import java.time.LocalTime
 
 private const val TAG = "RoutineRepository"
 
-/** One routine item as Today and the Journal tab see it. */
+/** One routine item as Today and the Journal tab see it. [doneToday] is for the day asked for. */
 data class RoutineStatus(
     val item: RoutineItem,
     val doneToday: Boolean,

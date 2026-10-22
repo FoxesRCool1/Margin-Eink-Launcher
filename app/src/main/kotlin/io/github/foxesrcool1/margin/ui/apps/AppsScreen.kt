@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -108,6 +109,7 @@ fun AppsScreen(
     /** For the screenshot tests, which have no tablet to list the apps of. */
     previewApps: List<LauncherEntry>? = null,
     previewFolders: AppFolders? = null,
+    previewEscapes: List<EscapeEntry> = emptyList(),
     /** Null: the page the user was on last. */
     initialPage: Int? = null,
     /** Opens the A to Z page with the search field showing this text. */
@@ -131,7 +133,7 @@ fun AppsScreen(
         LastAppsPage.page = next
     }
     var apps by remember { mutableStateOf(previewApps.orEmpty()) }
-    var escapes by remember { mutableStateOf<List<EscapeEntry>>(emptyList()) }
+    var escapes by remember { mutableStateOf(previewEscapes) }
     var folders by remember { mutableStateOf(previewFolders ?: AppFolders()) }
     var openFolder by remember { mutableStateOf<String?>(null) }
     // Null when the search field is closed. The empty string is an open field.
@@ -311,6 +313,7 @@ fun AppsScreen(
                 when (row) {
                     is FirstPageRow.Pinned -> AppRow(
                         label = row.entry.label,
+                        iconRoom = escapes.isNotEmpty(),
                         onOpen = { opener.openApp(row.entry) },
                         onLongPress = { menuFor = row.entry },
                     )
@@ -352,6 +355,7 @@ fun AppsScreen(
                 when (row) {
                     is AllPageRow.App -> AppRow(
                         label = row.entry.label,
+                        iconRoom = listed.any { it is AllPageRow.HiddenToggle },
                         hint = if (folders.isHidden(row.entry.key)) "Hidden" else null,
                         mark = if (pinnedKeys.contains(row.entry.key)) Lucide.Pin else null,
                         onOpen = { opener.openApp(row.entry) },
@@ -507,13 +511,18 @@ fun AppsScreen(
     }
 }
 
-/** One line: a name, and around it an icon in front, a small word behind, or a small mark behind. */
+/**
+ * One line: a name, and around it an icon in front, a small word behind, or a
+ * small mark behind. A row with no icon keeps the room of one when
+ * [iconRoom] is set, so every name in a list starts at the same place.
+ */
 @Composable
 private fun AppRow(
     label: String,
     onOpen: () -> Unit,
     onLongPress: (() -> Unit)? = null,
     icon: LucideIcon? = null,
+    iconRoom: Boolean = false,
     hint: String? = null,
     mark: LucideIcon? = null,
 ) {
@@ -525,7 +534,11 @@ private fun AppRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) EinkIcon(icon = icon, color = colour)
+            if (icon != null) {
+                EinkIcon(icon = icon, color = colour)
+            } else if (iconRoom) {
+                Spacer(modifier = Modifier.size(EinkDimens.icon))
+            }
             EinkText(
                 text = label,
                 style = EinkType.rowTitle.copy(color = colour),

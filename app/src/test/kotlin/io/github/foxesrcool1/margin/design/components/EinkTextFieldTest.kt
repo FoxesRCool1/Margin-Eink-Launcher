@@ -12,6 +12,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -131,6 +133,37 @@ class EinkTextFieldTest {
         text = ""
         compose.waitForIdle()
         compose.onNodeWithTag("field").assertTextEquals("")
+    }
+
+    @Test
+    fun `typing replaces the starting text of a field that opens with it selected`() {
+        compose.setContent {
+            EinkTheme {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    EinkTextField(
+                        value = "17",
+                        onValueChange = {},
+                        singleLine = true,
+                        selectAllOnOpen = true,
+                        modifier = Modifier.fillMaxWidth().testTag("selected"),
+                    )
+                    EinkTextField(
+                        value = "17",
+                        onValueChange = {},
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("plain"),
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("selected").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("selected").performTextInput("42")
+        compose.onNodeWithTag("plain").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("plain").performTextInput("42")
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("selected").assertTextEquals("42")
+        compose.onNodeWithTag("plain").assertTextEquals("1742")
     }
 
     private fun pagedField(text: String, pages: TextPages, seen: MutableList<Int>) {

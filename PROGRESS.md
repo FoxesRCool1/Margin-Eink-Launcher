@@ -4,6 +4,40 @@ One section per step. Newest step at the top.
 
 ---
 
+## QA round 2: Journal days, Go to page, Write in the second half, Apps rows
+
+Date: 2026-10-22. Branch `Dev`.
+
+### What was done
+
+1. Journal: the habit and routine rows belong to the day on show. On a past
+   day they show that day's ticks, the dots end on that day, and a tap ticks
+   that day. The streak still counts from today. On today the date is still
+   worked out at the tap (the day boundary fix). On a day that has not come
+   yet the rows are faded and a tap does nothing. The routine page says the
+   day in its small title when it is not today.
+2. PDF "Go to page": the page number is selected when the box opens, so typing
+   replaces it. `EinkTextField` and `TextPromptDialog` have an optional
+   `selectAllOnOpen`, off by default.
+3. Write in the second half of the split screen: the arrow goes up one folder
+   first, and only from the top folder to the choice of pages.
+4. Apps: the names on the pinned page and on the A to Z page start at one
+   place. A row with no icon keeps the room of an icon when another row of the
+   list has one (the ways out, the hidden apps line).
+
+### What the owner must test on the tablet
+
+- Journal, step back one day: the ticks are that day's. Tap a habit: only that
+  day changes. Step forward past today: the rows are grey and a tap does
+  nothing. Open Routine from a past day: same.
+- PDF, Go to page: type 42 at once. The box must show 42.
+- Split screen, Write in the second half, open a folder: the arrow goes up one
+  folder. In the top folder it goes to the choice of pages.
+- Apps, pinned page and A to Z page with some apps hidden: every name starts at
+  the same place.
+
+---
+
 ## Typed notes turn pages instead of scrolling
 
 Date: 2026-10-22. Branch `Dev`. Decision 0011, "What is left", item 1.

@@ -134,6 +134,22 @@ class HabitsRepositoryTest {
     }
 
     @Test
+    fun `a summary for another day shows that day and counts the streak from today`() {
+        habits.add("Read", today)
+        // Done yesterday and the day before, not today.
+        listOf(1L, 2L).forEach { back -> habits.toggle("read", today.minusDays(back)) }
+
+        val past = habits.summaries(today, day = today.minusDays(2)).single()
+        assertTrue(past.doneToday)
+        assertEquals(listOf(true), past.lastDays.takeLast(1))
+        assertEquals(2, past.currentStreak)
+
+        val now = habits.summaries(today).single()
+        assertFalse(now.doneToday)
+        assertEquals(listOf(true, true, false), now.lastDays.takeLast(3))
+    }
+
+    @Test
     fun `an archived habit is left out of the summaries`() {
         habits.add("Read", today)
         habits.add("Walk", today)

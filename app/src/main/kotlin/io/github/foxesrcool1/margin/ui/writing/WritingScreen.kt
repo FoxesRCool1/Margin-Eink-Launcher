@@ -47,6 +47,7 @@ import io.github.foxesrcool1.margin.design.components.Plants
 import io.github.foxesrcool1.margin.design.components.TextPromptDialog
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
+import io.github.foxesrcool1.margin.ui.split.LocalPane
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -76,6 +77,7 @@ fun WritingScreen(
     val scope = rememberCoroutineScope()
     val notes = remember(context) { NotesRepository(DataRoot.repository(context)) }
     val inkNotes = remember(context) { InkNotesRepository(DataRoot.repository(context)) }
+    val inPane = LocalPane.current != null
 
     var folder by remember { mutableStateOf(notes.rootPath) }
     var rows by remember { mutableStateOf<List<NoteEntry>>(emptyList()) }
@@ -173,7 +175,9 @@ fun WritingScreen(
         title = "Write",
         overline = if (notes.isRoot(folder)) "All notes" else folder.removePrefix("${StorageLayout.NOTES}/"),
         plant = Plants.Writing,
-        onBack = onBack,
+        // In the second half the arrow says "Back", so it goes up one folder
+        // first, like the Back key. The arrow of a whole screen is the Home icon.
+        onBack = if (inPane && !notes.isRoot(folder)) ({ folder = notes.parentOf(folder) }) else onBack,
         modifier = modifier,
         actions = {
             IconPressButton(icon = Lucide.FilePlus, label = "New note", bordered = true, onClick = { choosingKind = true })

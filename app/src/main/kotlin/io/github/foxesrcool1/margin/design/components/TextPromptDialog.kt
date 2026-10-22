@@ -33,6 +33,8 @@ fun TextPromptDialog(
     cancelText: String = "Cancel",
     /** True when an empty answer is a fine answer. */
     allowEmpty: Boolean = false,
+    /** The starting text is selected, so typing replaces it. See [EinkTextField]. */
+    selectAllOnOpen: Boolean = false,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -62,6 +64,7 @@ fun TextPromptDialog(
                 onValueChange = { value = it },
                 textStyle = EinkType.body,
                 singleLine = true,
+                selectAllOnOpen = selectAllOnOpen,
                 // Enter is the same as the confirm button, for a keyboard user.
                 onSubmit = { if (canConfirm) onConfirm(value.trim()) },
                 modifier = Modifier

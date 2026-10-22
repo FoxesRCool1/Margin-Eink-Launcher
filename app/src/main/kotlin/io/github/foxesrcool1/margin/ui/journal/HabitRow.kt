@@ -34,6 +34,9 @@ import io.github.foxesrcool1.margin.design.icons.Lucide
  * A tap marks the day done or undone. A hold opens the options. The dots are
  * filled or hollow circles rather than colours, because the panel has no
  * colour and a grey dot would dither.
+ *
+ * A row that is not [enabled], on a day that has not come yet, is faded and a
+ * tap does nothing. The hold still works: a habit can be renamed any day.
  */
 @Composable
 fun HabitRow(
@@ -41,9 +44,10 @@ fun HabitRow(
     onToggle: () -> Unit,
     onOptions: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    EinkRow(onClick = onToggle, onLongClick = onOptions, modifier = modifier) { pressed ->
-        val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
+    EinkRow(onClick = if (enabled) onToggle else ({}), onLongClick = onOptions, modifier = modifier) { pressed ->
+        val foreground = if (pressed) EinkColors.Paper else if (enabled) EinkColors.Ink else EinkColors.Faded
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
 
         Row(

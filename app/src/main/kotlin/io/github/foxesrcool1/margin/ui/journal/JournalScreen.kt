@@ -114,6 +114,11 @@ fun JournalScreen(
     // The day of the month the user chose. Month stepping clamps to short
     // months, and this brings the 31st back after a February.
     var anchorDay by remember { mutableIntStateOf(today.dayOfMonth) }
+    // The habits and the routine belong to the day on show. A day that has not
+    // come yet cannot be ticked. On "today" the tap works out the date again,
+    // for the reason given at dateNow: the page then moves to the new day.
+    val canTick = viewDate <= today
+    fun tickDay(): LocalDate = if (viewDate == today) dateNow() else viewDate
 
     var entryText by remember { mutableStateOf("") }
     var savedText by remember { mutableStateOf("") }
@@ -163,10 +168,10 @@ fun JournalScreen(
             val document = habits.load()
             LoadedDay(
                 entry = data.journalEntry(date).orEmpty(),
-                summaries = habits.summaries(today),
+                summaries = habits.summaries(today, date),
                 monthDays = data.journalDatesIn(date.year).toSet(),
                 boundaryHour = document.dayBoundaryHour,
-                routine = routine.statuses(today),
+                routine = routine.statuses(date),
             ) to data.hasInkJournalEntry(date)
         }.let { (day, ink) ->
             hasInkEntry = ink
@@ -311,7 +316,11 @@ fun JournalScreen(
             JournalMode.Routine -> "Routine"
         },
         shortTitle = if (mode == JournalMode.Day) JournalStrings.shortDayTitle(viewDate) else null,
-        overline = if (mode == JournalMode.Routine) "Journal" else JournalStrings.dayOverline(viewDate, today),
+        overline = when {
+            mode != JournalMode.Routine -> JournalStrings.dayOverline(viewDate, today)
+            viewDate == today -> "Journal"
+            else -> "Journal, ${JournalStrings.shortDayTitle(viewDate)}"
+        },
         plant = Plants.Journal,
         modifier = modifier,
         // The routine is a page inside the Journal, so its way back leads to
@@ -365,8 +374,9 @@ fun JournalScreen(
                     status = status,
                     isFirst = index == 0,
                     isLast = index == routineRows.size - 1,
+                    enabled = canTick,
                     onToggle = {
-                        val day = dateNow()
+                        val day = tickDay()
                         scope.launch {
                             withContext(AppDispatchers.io) {
                                 routine.toggle(status.item.id, day)
@@ -450,8 +460,9 @@ fun JournalScreen(
                         ) { _, summary ->
                             HabitRow(
                                 summary = summary,
+                                enabled = canTick,
                                 onToggle = {
-                                    val day = dateNow()
+                                    val day = tickDay()
                                     scope.launch {
                                         withContext(AppDispatchers.io) {
                                             habits.toggle(summary.habit.id, day)

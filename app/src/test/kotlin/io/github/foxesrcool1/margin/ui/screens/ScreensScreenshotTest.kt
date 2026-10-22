@@ -45,6 +45,8 @@ import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.support.captureTo
 import io.github.foxesrcool1.margin.ui.apps.AppsScreen
+import io.github.foxesrcool1.margin.ui.apps.EscapeEntry
+import io.github.foxesrcool1.margin.ui.apps.EscapeKind
 import io.github.foxesrcool1.margin.ui.apps.LauncherEntry
 import io.github.foxesrcool1.margin.ui.home.ContinueFinder
 import io.github.foxesrcool1.margin.ui.home.ContinueTarget
@@ -86,10 +88,15 @@ import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import io.github.foxesrcool1.margin.ui.split.LocalPane
+import io.github.foxesrcool1.margin.ui.split.PaneContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -382,6 +389,32 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         assertFalse(wentHome)
     }
 
+    /** The arrow of the second half goes up one folder first, and to the choice of pages only from the top. */
+    @Test
+    fun writingArrowInTheSecondHalfGoesUpOneLevel() {
+        val notes = NotesRepository(DataRoot.repository(context))
+        notes.createFolder(notes.rootPath, "Essays")
+        var wentToChoice = false
+        compose.setContent {
+            EinkTheme {
+                CompositionLocalProvider(LocalPane provides PaneContext(SplitState(), sideBySide = false)) {
+                    WritingScreen(onBack = { wentToChoice = true }, onOpenNote = {})
+                }
+            }
+        }
+        waitForText("Essays")
+        compose.onAllNodesWithText("Essays")[0].performClick()
+        compose.onNodeWithContentDescription("Up one folder").assertIsEnabled()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Up one folder").assertIsNotEnabled()
+        assertFalse(wentToChoice)
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        assertTrue(wentToChoice)
+    }
+
     private fun seedJournal() {
         val data = DataRoot.repository(context)
         val habits = HabitsRepository(data)
@@ -414,6 +447,56 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.onNodeWithContentDescription("Routine").performClick()
         waitForText("Plan the day")
         capture("journal_routine")
+    }
+
+    /** The habits of a past day are that day's, and a tap ticks that day and not today. */
+    @Test
+    fun journalHabitsBelongToThePastDayOnShow() {
+        seedJournal()
+        val habits = HabitsRepository(DataRoot.repository(context))
+        habits.toggle("walk-outside", today)
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Walk outside")
+        compose.onNodeWithContentDescription("The day before").performClick()
+        waitForText("Yesterday")
+        compose.onNodeWithText("Walk outside").performClick()
+        compose.waitForIdle()
+        assertEquals(setOf(today, today.minusDays(1)), habits.datesFor("walk-outside"))
+        capture("journal_past_day")
+    }
+
+    /** A day that has not come yet shows its habits faded, and a tap changes nothing. */
+    @Test
+    fun journalHabitsOfAFutureDayCannotBeTicked() {
+        seedJournal()
+        val habits = HabitsRepository(DataRoot.repository(context))
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Walk outside")
+        compose.onNodeWithContentDescription("The day after").performClick()
+        waitForText("Tomorrow")
+        compose.onNodeWithText("Walk outside").performClick()
+        compose.waitForIdle()
+        assertTrue(habits.datesFor("walk-outside").isEmpty())
+        capture("journal_future_day")
+    }
+
+    /** The routine page belongs to the day on show too. */
+    @Test
+    fun journalRoutineBelongsToThePastDayOnShow() {
+        seedJournal()
+        val routine = RoutineRepository(DataRoot.repository(context))
+        routine.add("Stretch")
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Walk outside")
+        compose.onNodeWithContentDescription("The day before").performClick()
+        waitForText("Yesterday")
+        compose.onNodeWithContentDescription("Routine").performClick()
+        waitForText("Stretch")
+        compose.onNodeWithText("Stretch").performClick()
+        compose.waitForIdle()
+        assertTrue(routine.statuses(today.minusDays(1)).single().doneToday)
+        assertFalse(routine.statuses(today).single().doneToday)
+        capture("journal_routine_past_day")
     }
 
     /** The options of a routine item, held down. The longest list in the Journal. */
@@ -556,6 +639,33 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.onAllNodesWithContentDescription("Back to the folders").assertCountEquals(0)
         assertFalse(wentHome)
         capture("apps_back_to_folders")
+    }
+
+    /** Pinned apps and the ways out: every name starts at the same place, with or without an icon. */
+    @Test
+    fun appsPinnedWithTheWaysOut() {
+        val store = SettingsStore(context)
+        runBlocking { store.setPinnedApps(someApps.take(2).map { it.key }) }
+        try {
+            compose.setContent {
+                EinkTheme {
+                    AppsScreen(
+                        onBack = {},
+                        previewApps = someApps,
+                        previewFolders = someFolders,
+                        previewEscapes = listOf(
+                            EscapeEntry("Launcher3", "Other home app", EscapeKind.OtherHome),
+                            EscapeEntry("Android settings", "System", EscapeKind.AndroidSettings),
+                        ),
+                        initialPage = 0,
+                    )
+                }
+            }
+            waitForText("Android settings")
+            capture("apps_pinned_ways_out")
+        } finally {
+            runBlocking { store.setPinnedApps(emptyList()) }
+        }
     }
 
     @Test
