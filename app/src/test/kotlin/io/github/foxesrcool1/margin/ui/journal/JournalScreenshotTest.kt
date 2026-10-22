@@ -76,6 +76,24 @@ class JournalScreenshotTest {
     }
 
     @Test
+    fun habitRowWithoutStreak() {
+        // Another day than today: the streak counts up to today, so it is left out.
+        compose.setContent {
+            EinkTheme {
+                Column(modifier = Modifier.fillMaxSize().padding(EinkDimens.screenMargin)) {
+                    HabitRow(
+                        summary = summary("Read 30 minutes", listOf(0, 1, 2, 3, 4)),
+                        onToggle = {},
+                        onOptions = {},
+                        showStreak = false,
+                    )
+                }
+            }
+        }
+        compose.onRoot().captureTo("habit_row_without_streak")
+    }
+
+    @Test
     fun monthView() {
         compose.setContent {
             EinkTheme {

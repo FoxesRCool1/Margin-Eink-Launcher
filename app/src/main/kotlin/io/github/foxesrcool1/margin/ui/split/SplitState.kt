@@ -112,12 +112,29 @@ class SplitState(
         }
     }
 
+    /**
+     * Back on the Home screen, which has nothing behind it. The second half
+     * steps back to its choice first, and the split closes from the choice.
+     */
+    fun backAtHome() = if (page == PanePage.Choose) close() else home()
+
     /** Back to the choice of what goes in the second half. */
     fun home() {
         touched()
         notice = null
         trail.clear()
         trail.add(PanePage.Choose)
+    }
+
+    /**
+     * The Write page deleted [path], a note or a folder. A second half that
+     * shows a note in it goes back to its choice, so that editor cannot write
+     * the file back with its next save. True when the main half shows such a
+     * note: only the screen around it can close that.
+     */
+    fun noteDeleted(path: String): Boolean {
+        if (isOpen && page.isNoteAtOrInside(path)) home()
+        return mainPage().isNoteAtOrInside(path)
     }
 
     /** Shows [text] at the top of the second half until the next move. */

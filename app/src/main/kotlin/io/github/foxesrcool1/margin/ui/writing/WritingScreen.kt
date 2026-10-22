@@ -29,6 +29,7 @@ import io.github.foxesrcool1.margin.core.notes.NoteEntry
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
+import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
@@ -48,6 +49,7 @@ import io.github.foxesrcool1.margin.design.components.TextPromptDialog
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
 import io.github.foxesrcool1.margin.ui.split.LocalPane
+import io.github.foxesrcool1.margin.ui.split.LocalSplit
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -78,6 +80,8 @@ fun WritingScreen(
     val notes = remember(context) { NotesRepository(DataRoot.repository(context)) }
     val inkNotes = remember(context) { InkNotesRepository(DataRoot.repository(context)) }
     val inPane = LocalPane.current != null
+    // The split screen this page is a half of, whichever half it is.
+    val split = LocalSplit.current ?: LocalPane.current?.split
 
     var folder by remember { mutableStateOf(notes.rootPath) }
     var rows by remember { mutableStateOf<List<NoteEntry>>(emptyList()) }
@@ -393,6 +397,10 @@ fun WritingScreen(
                     val gone = withContext(AppDispatchers.io) { notes.delete(beingDeleted.path) }
                     status = if (gone) "Deleted ${beingDeleted.name}" else "Could not delete it"
                     AppLog.i(TAG, "Delete of ${beingDeleted.path}: $gone")
+                    // A note open in the other half would save its next edit to
+                    // a new file, as it does for a rename. The second half goes
+                    // back to its choice, and a screen that is the note closes.
+                    if (gone && split?.noteDeleted(beingDeleted.path) == true) context.findActivity()?.finish()
                     // A note marked for a move is gone too when its folder is.
                     if (isAtOrInside(marked, beingDeleted.path)) marked = null
                     refresh++

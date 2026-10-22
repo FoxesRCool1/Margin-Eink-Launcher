@@ -50,9 +50,20 @@ internal fun PanePage.holds(): Set<String> = when (this) {
     )
 }
 
+/** True when the page is a note that is [path] or lies inside the folder [path]. */
+internal fun PanePage?.isNoteAtOrInside(path: String): Boolean =
+    this?.notePath()?.let { it == path || it.startsWith("$path/") } == true
+
 /** True when the two pages would show, and write, the same thing. */
 fun PanePage.clashesWith(other: PanePage?): Boolean =
     other != null && holds().any { it in other.holds() }
+
+/** The file of a note page, or null for any other page. */
+private fun PanePage.notePath(): String? = when (this) {
+    is PanePage.TypedNote -> path
+    is PanePage.InkNote -> path
+    else -> null
+}
 
 internal const val UNTITLED_BOOK = "Untitled book"
 

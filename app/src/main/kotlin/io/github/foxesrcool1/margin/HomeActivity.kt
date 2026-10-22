@@ -168,7 +168,7 @@ class HomeActivity : ComponentActivity() {
                                 onOpenNote = opener::openTypedNote,
                                 onOpenInkNote = { path, title -> opener.openInkNote(path, title) },
                                 onQuickNote = { quickNote() },
-                                onBackAtHome = split::close,
+                                onBackAtHome = split::backAtHome,
                                 newNoteRequests = newNoteRequests.intValue,
                                 takeNewNoteRequest = { newNoteWanted.also { newNoteWanted = false } },
                                 takeRouteChangedAt = {
@@ -314,7 +314,7 @@ private fun LauncherHost(
     onOpenNote: (String) -> Unit,
     onOpenInkNote: (path: String, title: String) -> Unit,
     onQuickNote: () -> Unit,
-    /** Back on Home itself. Home has nothing behind it, so this only closes the split screen. */
+    /** Back on Home itself. Home has nothing behind it, so this only steps back in the split screen. */
     onBackAtHome: () -> Unit,
     newNoteRequests: Int,
     /** True once for each Ctrl+N. A tab opened later does not see an old request. */
@@ -395,8 +395,10 @@ private fun LauncherHost(
     }
 
     // Back goes one level up: from the log and the updates to Settings, from
-    // a tab to Home. On Home it closes the split screen, and does nothing
-    // else, because a home screen has nowhere behind it.
+    // a tab to Home. On Home it takes the second half back to its choice and
+    // then closes the split screen, because a home screen has nowhere behind
+    // it. A page in the second half that has a way back of its own gets Back
+    // first: it is composed after this one.
     BackHandler(enabled = true) {
         if (route != LauncherRoute.Home) onRoute(route.parent) else onBackAtHome()
     }

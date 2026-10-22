@@ -45,6 +45,8 @@ fun HabitRow(
     onOptions: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /** The streak counts up to today, so only today's page shows it. */
+    showStreak: Boolean = true,
 ) {
     EinkRow(onClick = if (enabled) onToggle else ({}), onLongClick = onOptions, modifier = modifier) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else if (enabled) EinkColors.Ink else EinkColors.Faded
@@ -66,7 +68,7 @@ fun HabitRow(
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            val streak = JournalStrings.streakLabel(summary.currentStreak)
+            val streak = if (showStreak) JournalStrings.streakLabel(summary.currentStreak) else ""
             if (streak.isNotEmpty()) {
                 CapsLabel(text = streak, style = EinkType.capsSmall.copy(color = faded))
             }

@@ -461,6 +461,7 @@ fun JournalScreen(
                             HabitRow(
                                 summary = summary,
                                 enabled = canTick,
+                                showStreak = viewDate == today,
                                 onToggle = {
                                     val day = tickDay()
                                     scope.launch {

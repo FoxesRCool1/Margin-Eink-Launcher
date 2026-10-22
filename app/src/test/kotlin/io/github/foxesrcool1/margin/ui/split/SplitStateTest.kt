@@ -42,6 +42,45 @@ class SplitStateTest {
     }
 
     @Test
+    fun `back on Home steps back to the choice and then closes the split`() {
+        val split = SplitState().apply { open() }
+        split.show(writing)
+        split.show(note)
+        split.backAtHome()
+        assertTrue(split.isOpen)
+        assertEquals(PanePage.Choose, split.page)
+        split.backAtHome()
+        assertFalse(split.isOpen)
+    }
+
+    @Test
+    fun `a deleted note sends the second half back to its choice`() {
+        val split = SplitState().apply { open() }
+        split.show(note)
+        assertFalse(split.noteDeleted("notes/Other.md"))
+        assertEquals(note, split.page)
+        // A folder takes the notes in it along, but not a folder that only starts the same.
+        split.noteDeleted("notes/Let")
+        assertEquals(note, split.page)
+        split.noteDeleted("notes")
+        assertEquals(PanePage.Choose, split.page)
+
+        split.show(PanePage.InkNote("notes/Sketch.inknote", "Sketch"))
+        split.noteDeleted("notes/Sketch.inknote")
+        assertEquals(PanePage.Choose, split.page)
+        assertTrue(split.isOpen)
+    }
+
+    @Test
+    fun `a deleted note that is the main half is reported to its screen`() {
+        val split = SplitState(mainPage = { note }).apply { open(writing) }
+        assertFalse(split.noteDeleted("notes/Other.md"))
+        assertTrue(split.noteDeleted("notes/Letter.md"))
+        // The second half was not that note, so it stays.
+        assertEquals(writing, split.page)
+    }
+
+    @Test
     fun `the page the main half shows is refused, with a notice`() {
         var main: PanePage? = note
         val split = SplitState(mainPage = { main }).apply { open() }
