@@ -75,7 +75,7 @@ only after a check fails with "not found".
 
 If you need it: on GitHub make a fine-grained personal access token for that
 one repository with "Contents" set to "Read-only", then on the tablet,
-Settings, About, Updates, "Enter access token". Such a token can
+Settings, About, Updates, "Add Token". Such a token can
 read the source of that repository, so give it an expiry date. It is kept in
 the private storage of the app, outside every backup, it is never written to
 the log, and it is only ever sent to `api.github.com`.
