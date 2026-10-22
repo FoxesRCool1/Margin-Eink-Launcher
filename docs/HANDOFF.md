@@ -6,7 +6,8 @@ added the same day by the session that built the in-app update, and section
 2c by the session that did the owner's first list of changes. Sections 2d and
 2e came with the second and third lists, on 2026-09-22, and 2f with the open
 source pass the same day. Section 2g came with 1.0.0 and the release key,
-and 2h with a pass over the app on 2026-09-23.
+and 2h with a pass over the app on 2026-09-23. Section 2i came with
+the big pass of 2026-10-22.
 
 Read `CLAUDE.md` first for the rules, then this file for the state.
 
@@ -224,6 +225,45 @@ the owner's word. What a new session must know:
 - **Adding a habit with the name of an archived one brings it back.** There
   is no list of archived habits in the Journal.
 - The emulator holds the debug build now, not the signed 1.0.0.
+
+### 2i. The big pass of 2026-10-22: freezes, Settings, Home, icons
+
+The owner said the UI "sometimes gets stuck", Settings had too many words,
+and asked for something pleasant and unique to use every day, with Prose as
+the inspiration. Two code audits, two runs in the emulator, and many fixes.
+`PROGRESS.md`, the top sections, and decisions 0023 to 0026. What a new
+session must know:
+
+- **The freezes were waits on the main thread**, not a stuck overlay. Every
+  vendor e-ink call now runs on one thread, `core/eink/EinkThread`, in order.
+  A failed binder call no longer waits on a shell command with the screen
+  frozen. Leaving a handwritten note waits only for the strokes. Use
+  `EinkThread.run` for any new vendor call.
+- **A double tap guard ate real taps.** `ScreenPageOpener` forgets the last
+  page when its screen comes back. The emulator retest opened the note 10
+  times out of 10.
+- **Settings is four tabs** (Screen, Pen, Files, About), short rows, no help
+  lines. The Pen tab exists only with vendor control. Decision 0023.
+- **Home is a Today page**: a big clock, Continue (last book or note), and
+  the routine item for this part of the day. Routine items have an optional
+  part of the day in `routine.json`. Decision 0024.
+- **The Journal has a word goal**, Off by default. Decision 0025.
+- **Icons are drawn the Lucide way**: the line grows with the icon. This is
+  the one exception to "lines are 1 or 2 dp". Decision 0026.
+- **Long typed notes turn pages.** `EinkTextField` snaps a field of many
+  lines to whole pages and hides a half-cut last line. `TextPages` gives a
+  screen the page number and the buttons. Decision 0011, item 1.
+- **A file that exists but cannot be read is not "missing"** any more.
+  `FileStore.readTextOrThrow` and `readBytesOrThrow` throw for it, and the
+  habits, routine, reading log and PDF ink refuse to write over it.
+- **"Read the folder again" is gone.** It built an index and threw it away.
+  The lists read the folder each time. `LibraryIndex` is still unused.
+- **Rows grow with the system text size.** `PagedList` scales `rowHeight` by
+  the font scale above 1.
+- **The Gradle daemon went stale once** when the JDK was updated under it
+  ("Failed to exec spawn helper"). `./gradlew --stop` or `--no-daemon`.
+- None of this has run on the tablet. The device test lists are in
+  `PROGRESS.md`.
 
 
 ---
