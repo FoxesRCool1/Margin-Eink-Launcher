@@ -81,6 +81,9 @@ private const val TAG = "InkNoteActivity"
 class InkNoteActivity : ComponentActivity() {
 
     private var controller: InkNoteController? = null
+
+    /** The note once it is read. The screen shows "Opening" until then. */
+    private var opened by mutableStateOf<OpenedNote?>(null)
     private var session: FastPenSession? = null
     private var canvasView: InkCanvasView? = null
 
@@ -128,6 +131,53 @@ class InkNoteActivity : ComponentActivity() {
             }
         }
 
+        // The screen is up before the note is read, so a big note never
+        // leaves a blank window.
+        setContent {
+            EinkTheme {
+                SplitLayout(
+                    split = split,
+                    main = {
+                        val ready = opened
+                        if (ready == null) {
+                            Box(
+                                modifier = Modifier.fillMaxSize().background(EinkColors.Paper).systemBarsPadding(),
+                                contentAlignment = Alignment.Center,
+                            ) { CapsLabel(text = "Opening") }
+                        } else {
+                            val made = ready.controller
+                            InkNoteScreen(
+                                title = title,
+                                controller = made,
+                                problem = ready.problem,
+                                onCanvas = { view ->
+                                    // A new canvas: the split screen or a turn
+                                    // made the page change its layout. The
+                                    // tablet must stop drawing over the old one
+                                    // at once, not at the next layout.
+                                    if (canvasView != null && canvasView !== view && session?.canvas === canvasView) {
+                                        session?.stop()
+                                        session = null
+                                    }
+                                    canvasView = view
+                                    made.attach(view)
+                                    // A turn of the screen, or the split
+                                    // screen, moves the canvas. The fast pen
+                                    // has to follow it.
+                                    view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> startFastPen() }
+                                },
+                                onDialog = { open -> if (open) session?.stop() else startFastPen() },
+                                onWidth = { session?.applyWidth(it) },
+                                onExport = { asPdf -> export(made, ready.repository, title.ifBlank { "note" }, asPdf) },
+                                onClose = { finish() },
+                            )
+                        }
+                    },
+                    pane = { SplitPane(split, paneHost) },
+                )
+            }
+        }
+
         lifecycleScope.launch {
             val settings = SettingsStore(this@InkNoteActivity)
             fastPenMode = settings.fastPenMode.first()
@@ -151,41 +201,7 @@ class InkNoteActivity : ComponentActivity() {
 
             val made = InkNoteController(repository, path, note, mayWrite = problem == null)
             controller = made
-            setContent {
-                EinkTheme {
-                    SplitLayout(
-                        split = split,
-                        main = {
-                            InkNoteScreen(
-                                title = title,
-                                controller = made,
-                                problem = problem,
-                                onCanvas = { view ->
-                                    // A new canvas: the split screen or a turn
-                                    // made the page change its layout. The
-                                    // tablet must stop drawing over the old one
-                                    // at once, not at the next layout.
-                                    if (canvasView != null && canvasView !== view && session?.canvas === canvasView) {
-                                        session?.stop()
-                                        session = null
-                                    }
-                                    canvasView = view
-                                    made.attach(view)
-                                    // A turn of the screen, or the split
-                                    // screen, moves the canvas. The fast pen
-                                    // has to follow it.
-                                    view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> startFastPen() }
-                                },
-                                onDialog = { open -> if (open) session?.stop() else startFastPen() },
-                                onWidth = { session?.applyWidth(it) },
-                                onExport = { asPdf -> export(made, repository, title.ifBlank { "note" }, asPdf) },
-                                onClose = { finish() },
-                            )
-                        },
-                        pane = { SplitPane(split, paneHost) },
-                    )
-                }
-            }
+            opened = OpenedNote(made, problem, repository)
         }
     }
 
@@ -272,6 +288,8 @@ class InkNoteActivity : ComponentActivity() {
             .putExtra(EXTRA_TEMPLATE, templateForNew.id)
     }
 }
+
+private class OpenedNote(val controller: InkNoteController, val problem: String?, val repository: InkNotesRepository)
 
 /** The fine line between a rail of tools and the page. */
 @Composable

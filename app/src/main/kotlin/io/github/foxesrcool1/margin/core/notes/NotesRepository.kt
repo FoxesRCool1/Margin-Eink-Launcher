@@ -81,6 +81,9 @@ class NotesRepository(private val data: DataRepository) {
 
     fun exists(path: String): Boolean = data.store.exists(path)
 
+    /** [path], or the same name with a number when something is there already. */
+    fun freePath(path: String): String = data.freePath(path)
+
     /** Makes a new empty note and returns its path, or null. */
     fun createNote(folderPath: String, title: String): String? {
         val safe = StorageLayout.safeName(title)

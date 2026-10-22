@@ -11,12 +11,15 @@ import android.view.ViewGroup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import java.time.Duration
+import java.util.concurrent.Executor
 
 /** Records the picture modes it is given, like the tablet would take them. */
 private class RecordingDevice(
@@ -45,6 +48,18 @@ private class RecordingDevice(
 class ScreenRefreshTest {
 
     private val activity: Activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+    private val vendorThread = EinkThread.executor
+
+    /** The vendor thread runs its work in place, so the test sees the calls at once. */
+    @Before
+    fun runVendorCallsInPlace() {
+        EinkThread.executor = Executor { it.run() }
+    }
+
+    @After
+    fun putTheVendorThreadBack() {
+        EinkThread.executor = vendorThread
+    }
 
     private fun cover(): View? =
         activity.findViewById<ViewGroup>(android.R.id.content).findViewWithTag(ScreenRefresh.COVER_TAG)

@@ -37,7 +37,7 @@ class ViwoodsEinkDevice(
     private val serviceName: String = "ENoteSetting",
     private val allowShell: Boolean = true,
     private val runLater: (delayMillis: Long, action: () -> Unit) -> Unit = { delay, action ->
-        Handler(Looper.getMainLooper()).postDelayed(action, delay)
+        Handler(Looper.getMainLooper()).postDelayed({ EinkThread.run(action) }, delay)
     },
 ) : EinkDevice {
 
@@ -59,6 +59,9 @@ class ViwoodsEinkDevice(
     @Volatile
     override var activeFastPen: FastPenPath? = null
         private set
+
+    @Volatile
+    private var shellFailed = false
 
     private var modeBeforeFastPen: Int? = null
     private var lastRegion: Rect? = null
@@ -295,9 +298,11 @@ class ViwoodsEinkDevice(
             reasons += "transact: ${result.exceptionOrNull()?.shortReason()}"
         }
 
-        if (allowShell) {
+        if (allowShell && !shellFailed) {
             val result = runCatching { shellServiceCall(code, args) }
             if (result.isSuccess) return log(EinkCallResult(call, true, "service call: ${result.getOrNull()}"))
+            // A shell that failed once will fail again, and each try costs a process and a wait.
+            shellFailed = true
             reasons += "shell: ${result.exceptionOrNull()?.shortReason()}"
         }
 
@@ -388,7 +393,7 @@ class ViwoodsEinkDevice(
         /** How long the full refresh gets before the old mode comes back. */
         const val FULL_REFRESH_RESTORE_MILLIS = 700L
 
-        private const val SHELL_TIMEOUT_MILLIS = 2_000L
+        private const val SHELL_TIMEOUT_MILLIS = 500L
 
         private const val TOOL_PEN = 2
         private const val TOOL_ERASER = 4

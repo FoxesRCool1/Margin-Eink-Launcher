@@ -48,14 +48,6 @@ object ScreenRefresh {
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         if (root.findViewWithTag<View>(COVER_TAG) != null) return
 
-        val before = if (device.hasVendorControl) device.refreshMode() else null
-        // A panel found in the full mode already is one a refresh left behind,
-        // after the app died in the middle of one or a call to put it back
-        // failed. It goes to the reading mode after this one, and heals.
-        val restoreTo = if (before == RefreshMode.Full) RefreshMode.Reading else before
-        val fullMode = before != null &&
-            (before == RefreshMode.Full || device.setRefreshMode(RefreshMode.Full).ok)
-
         val cover = View(activity).apply {
             tag = COVER_TAG
             setBackgroundColor(Color.BLACK)
@@ -64,15 +56,33 @@ object ScreenRefresh {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         root.addView(cover, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        AppLog.i(TAG, "Force refresh. Vendor full mode: ${if (fullMode) "on, was ${before?.name}" else "not used"}")
+
+        // The vendor calls run on the vendor thread, one after the other, so
+        // the restore below always comes after this. They write fullMode and
+        // restoreTo; the restore reads them.
+        var fullMode = false
+        var restoreTo: RefreshMode? = null
+        EinkThread.run {
+            val before = if (device.hasVendorControl) device.refreshMode() else null
+            // A panel found in the full mode already is one a refresh left behind,
+            // after the app died in the middle of one or a call to put it back
+            // failed. It goes to the reading mode after this one, and heals.
+            restoreTo = if (before == RefreshMode.Full) RefreshMode.Reading else before
+            fullMode = before != null &&
+                (before == RefreshMode.Full || device.setRefreshMode(RefreshMode.Full).ok)
+            AppLog.i(TAG, "Force refresh. Vendor full mode: ${if (fullMode) "on, was ${before?.name}" else "not used"}")
+        }
 
         // The main handler, not the view: a view that is gone runs nothing it
         // was given, and the old picture mode must come back in every case.
         main.postDelayed({
             (cover.parent as? ViewGroup)?.removeView(cover)
-            if (fullMode && restoreTo != null) {
-                main.postDelayed({ device.setRefreshMode(restoreTo) }, RESTORE_MILLIS)
-            }
+            main.postDelayed({
+                EinkThread.run {
+                    val back = restoreTo
+                    if (fullMode && back != null) device.setRefreshMode(back)
+                }
+            }, RESTORE_MILLIS)
         }, BLACK_MILLIS)
     }
 }

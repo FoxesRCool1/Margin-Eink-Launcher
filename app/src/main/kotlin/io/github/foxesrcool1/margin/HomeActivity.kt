@@ -359,17 +359,21 @@ private fun LauncherHost(
                     // An item with nothing to open is just something to tick
                     // off, so Start marks it done and moves to the next one.
                     else -> scope.launch {
-                        next = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
-                            val data = DataRoot.repository(context)
-                            val hour = HabitsRepository(data).load().dayBoundaryHour
-                            val today = DayBoundary(hour).dateOf(
-                                java.time.Instant.now(),
-                                java.time.ZoneId.systemDefault(),
-                            )
-                            val routine = RoutineRepository(data)
-                            routine.toggle(item.id, today)
-                            routine.next(today)
+                        val done = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
+                            runCatching {
+                                val data = DataRoot.repository(context)
+                                val hour = HabitsRepository(data).load().dayBoundaryHour
+                                val today = DayBoundary(hour).dateOf(
+                                    java.time.Instant.now(),
+                                    java.time.ZoneId.systemDefault(),
+                                )
+                                val routine = RoutineRepository(data)
+                                routine.toggle(item.id, today)
+                                routine.next(today)
+                            }.onFailure { AppLog.e(TAG, "Could not mark the routine item ${item.id} done", it) }
                         }
+                        // A failure leaves the card as it was.
+                        done.onSuccess { next = it }
                     }
                 }
             },

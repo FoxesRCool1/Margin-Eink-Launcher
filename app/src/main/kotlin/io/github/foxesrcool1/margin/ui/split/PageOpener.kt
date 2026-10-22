@@ -1,12 +1,16 @@
 package io.github.foxesrcool1.margin.ui.split
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import io.github.foxesrcool1.margin.core.books.LibraryBook
 import io.github.foxesrcool1.margin.core.ink.PageTemplate
 import io.github.foxesrcool1.margin.core.log.AppLog
@@ -90,11 +94,41 @@ class ScreenPageOpener(
         runCatching {
             context.startActivity(make().withSplit(taken))
             if (taken != null) afterCarry()
-        }.onFailure { AppLog.e(TAG, "Could not open $what", it) }
+            forgetWhenBack()
+        }.onFailure {
+            lastOpened = null
+            AppLog.e(TAG, "Could not open $what", it)
+        }
+    }
+
+    /**
+     * The page that was opened is gone when this screen comes back, so the
+     * next tap on the same row is a new one and must not be swallowed.
+     */
+    private fun forgetWhenBack() {
+        val owner = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
+            .filterIsInstance<LifecycleOwner>().firstOrNull() ?: return
+        owner.lifecycle.addObserver(object : LifecycleEventObserver {
+            // A new observer is told the state the screen is in now, which is
+            // "resumed". Only a resume that follows a pause counts.
+            private var paused = false
+
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                when (event) {
+                    Lifecycle.Event.ON_PAUSE -> paused = true
+                    Lifecycle.Event.ON_RESUME -> if (paused) {
+                        lastOpened = null
+                        source.lifecycle.removeObserver(this)
+                    }
+                    Lifecycle.Event.ON_DESTROY -> source.lifecycle.removeObserver(this)
+                    else -> Unit
+                }
+            }
+        })
     }
 
     private companion object {
-        const val DOUBLE_TAP_MILLIS = 1500L
+        const val DOUBLE_TAP_MILLIS = 800L
         var lastOpened: String? = null
         var lastOpenedAt = 0L
     }

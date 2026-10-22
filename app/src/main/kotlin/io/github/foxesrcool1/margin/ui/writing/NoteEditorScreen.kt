@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,16 +34,22 @@ import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.withContext
 
 private const val TAG = "NoteEditorScreen"
 private const val AUTOSAVE_QUIET_MILLIS = 1_500L
+
+/** The word count and the title read the whole note, so they wait for the typing to pause. */
+private const val COUNT_QUIET_MILLIS = 400L
 
 /** One open typed note: what it holds now, and whether it may be typed into yet. */
 class NoteEditor(
     val text: String,
     val loaded: Boolean,
     val status: String,
+    val words: Int,
+    val title: String,
     val onText: (String) -> Unit,
 )
 
@@ -80,32 +87,49 @@ fun rememberNoteEditor(
     // and is gone was deleted or renamed from the Writing tab beside this
     // editor, and a write now would bring the old file back.
     val onDisk = remember(notePath) { AtomicBoolean(false) }
-    val gone = remember(notePath) { AtomicBoolean(false) }
+
+    // Where this editor writes. It is [notePath] until the file is gone, and
+    // then the file the text was saved to instead.
+    val current = remember(notePath) { AtomicReference(notePath) }
+
+    // The new file, until the status line has said so.
+    val relocated = remember(notePath) { AtomicReference<String?>(null) }
 
     // Every write of this note goes through here, so the autosave and the
     // save on the way out cannot cross. See NoteSaver.
     val saver = remember(notePath) {
         NoteSaver { content ->
-            if (onDisk.get() && !notes.exists(notePath)) {
-                gone.set(true)
-                AppLog.w(TAG, "$notePath was moved or deleted beside this editor. Not writing it back.")
-                false
+            val target = current.get()
+            if (onDisk.get() && !notes.exists(target)) {
+                // Typing must not be lost, and the old file must not come
+                // back. The text goes to a new file beside where it was.
+                val other = notes.freePath(target)
+                AppLog.w(TAG, "$target was moved or deleted beside this editor. Saving the text as $other.")
+                notes.write(other, content).also {
+                    if (it) {
+                        current.set(other)
+                        relocated.set(other)
+                    }
+                }
             } else {
-                notes.write(notePath, content).also { if (it) onDisk.set(true) }
+                notes.write(target, content).also { if (it) onDisk.set(true) }
             }
         }
     }
+
+    fun savedStatus(): String =
+        relocated.getAndSet(null)?.let { "Saved as ${RelativePaths.nameOf(it)}" } ?: "Saved"
 
     suspend fun save(reason: String) {
         if (text == savedText) return
         val written = withContext(AppDispatchers.io) { saver.save { text } }
         if (written) {
             savedText = saver.savedText ?: savedText
-            status = "Saved"
-            AppLog.i(TAG, "Saved $notePath ($reason)")
+            status = savedStatus()
+            AppLog.i(TAG, "Saved ${current.get()} ($reason)")
         } else {
-            status = if (gone.get()) "This note was moved or deleted" else "Could not save"
-            AppLog.e(TAG, "Could not save $notePath ($reason)")
+            status = "Could not save"
+            AppLog.e(TAG, "Could not save ${current.get()} ($reason)")
         }
     }
 
@@ -141,6 +165,24 @@ fun rememberNoteEditor(
         save("autosave")
     }
 
+    // The word count and the title wait for the typing to pause, and the next
+    // key cancels the wait. The first count, when the note opens, is at once.
+    var words by remember(notePath) { mutableIntStateOf(0) }
+    var title by remember(notePath) { mutableStateOf(RelativePaths.nameOf(notePath)) }
+    var counted by remember(notePath) { mutableStateOf(false) }
+    LaunchedEffect(text, loaded) {
+        if (!loaded) return@LaunchedEffect
+        if (counted) delay(COUNT_QUIET_MILLIS)
+        val now = text
+        val fallback = RelativePaths.nameOf(current.get())
+        val (count, heading) = withContext(AppDispatchers.io) {
+            NoteText.wordCount(now) to NoteText.titleFrom(now, fallback)
+        }
+        words = count
+        title = heading
+        counted = true
+    }
+
     LaunchedEffect(saveRequests) {
         if (saveRequests > 0 && loaded) save("keyboard")
     }
@@ -151,10 +193,13 @@ fun rememberNoteEditor(
         if (!loaded || text == saver.savedText) return
         runCatching { saver.save { text } }
             .onSuccess { written ->
-                if (written) savedText = saver.savedText ?: savedText
-                AppLog.i(TAG, "Saved $notePath ($reason): $written")
+                if (written) {
+                    savedText = saver.savedText ?: savedText
+                    if (relocated.get() != null) status = savedStatus()
+                }
+                AppLog.i(TAG, "Saved ${current.get()} ($reason): $written")
             }
-            .onFailure { AppLog.e(TAG, "Lost the last edit of $notePath ($reason)", it) }
+            .onFailure { AppLog.e(TAG, "Lost the last edit of ${current.get()} ($reason)", it) }
     }
 
     // "Done", Back and Escape close the screen, and this runs.
@@ -174,7 +219,7 @@ fun rememberNoteEditor(
         saveOnTheWayOut("the screen paused")
     }
 
-    return NoteEditor(text = text, loaded = loaded, status = status, onText = { text = it })
+    return NoteEditor(text = text, loaded = loaded, status = status, words = words, title = title, onText = { text = it })
 }
 
 /** The full screen editor: one note, and nothing else. */
@@ -188,7 +233,7 @@ fun NoteEditorScreen(
     val editor = rememberNoteEditor(notePath, saveRequests)
 
     ScreenScaffold(
-        title = NoteText.titleFrom(editor.text, RelativePaths.nameOf(notePath)),
+        title = editor.title,
         overline = RelativePaths.parentOf(notePath),
         modifier = modifier,
         onBack = onClose,
@@ -215,7 +260,7 @@ fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier) {
                 .padding(14.dp),
         )
         Spacer(modifier = Modifier.height(8.dp))
-        val words = NoteText.wordCount(editor.text)
+        val words = editor.words
         CapsLabel(
             text = "$words ${if (words == 1) "word" else "words"}  .  ${editor.status}",
             style = EinkType.capsSmall.copy(color = EinkColors.Faded),
