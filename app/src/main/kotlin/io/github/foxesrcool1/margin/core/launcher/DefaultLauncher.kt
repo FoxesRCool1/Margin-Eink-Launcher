@@ -71,10 +71,9 @@ object DefaultLauncher {
      */
     val manualSteps: List<String> = listOf(
         "Install DevCheck from the Play Store.",
-        "Open DevCheck and go to the Apps tab.",
-        "Find Margin in the list and tap it.",
-        "Tap Manage. The standard app info screen opens.",
-        "Tap Set as default, then Home app, then Margin.",
+        "Open DevCheck, then the Apps tab.",
+        "Tap Margin, then Manage.",
+        "Tap Set as default, Home app, Margin.",
     )
 
     private fun canBeStarted(context: Context, intent: Intent): Boolean = runCatching {

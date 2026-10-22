@@ -4,6 +4,10 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -11,14 +15,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.foxesrcool1.margin.BuildConfig
 import io.github.foxesrcool1.margin.core.eink.EinkDevice
@@ -37,11 +44,12 @@ import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.ConfirmDialog
 import io.github.foxesrcool1.margin.design.components.DialogOption
+import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.OptionsDialog
 import io.github.foxesrcool1.margin.design.components.Plants
 import io.github.foxesrcool1.margin.design.icons.Lucide
-import io.github.foxesrcool1.margin.design.icons.LucideIcon
+import io.github.foxesrcool1.margin.ui.common.LocalWideScreen
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
 import io.github.foxesrcool1.margin.ui.common.WebLinks
 import io.github.foxesrcool1.margin.ui.devicetest.PenTestActivity
@@ -52,30 +60,16 @@ import kotlinx.coroutines.withContext
 private const val TAG = "SettingsScreen"
 
 /**
- * The pages of Settings. The first one is the menu: the list of all the
- * others, each with one line that says what is in it.
- */
-enum class SettingsPage(val title: String, val summary: String, val icon: LucideIcon) {
-    Menu("Settings", "", Lucide.Settings),
-    HomeApp("Home app", "Make this the home screen.", Lucide.House),
-    Look("Look and screen", "Plants, status bar, landscape, refresh.", Lucide.Eye),
-    Pen("Pen", "Normal or fast pen, and a page to try it.", Lucide.PenLine),
-    Backup("Backup and files", "Save a copy, or bring one back.", Lucide.Archive),
-    Updates("Updates", "Look for a newer version.", Lucide.Download),
-    Help("Help", "The log, the tests, the credits.", Lucide.LifeBuoy),
-    About("Credits", "Who made what, and the licences.", Lucide.Info),
-}
-
-/**
  * The settings screen.
  *
- * It is a menu of six groups, and each group is one page of rows. Every row
- * has a short name, one or two lines that say what it does, and at the end
- * either a switch, the value it has now, or an arrow. The whole row is the
- * target. The first version was six tabs of buttons with the state written
- * into the button text, and the owner could not find his way around it.
+ * It opens on a strip of tabs, and each tab is one list of rows. A row has a
+ * short name and, at its end, a switch, the value it has now, or an arrow.
+ * There is no help line: the name is the help. The whole row is the target.
+ * The first version was six tabs of buttons with the state written into the
+ * button text, the second a menu of pages with a line of help under every
+ * row, and the owner found both hard to use.
  *
- * Nothing scrolls: a group with more rows than fit gets a second page.
+ * Nothing scrolls: a tab with more rows than fit gets a second page.
  */
 @Composable
 fun SettingsScreen(
@@ -84,18 +78,24 @@ fun SettingsScreen(
     onOpenDemo: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenUpdates: () -> Unit = {},
-    /** Which page to open on, as an index into [SettingsPage]. The screenshot tests use it. */
+    /** Which tab to open on, as an index into [SettingsTab]. The screenshot tests use it. */
     initialPage: Int = 0,
-    /** The panel. The screenshot tests hand in one with vendor control, to draw the Pen page. */
+    /** The panel. The screenshot tests hand in one with vendor control, to draw the Pen tab. */
     device: EinkDevice = EinkDevices.get(LocalContext.current),
+    /** Asks whether Margin is the home app. The screenshot tests hand in "no", to draw the first row. */
+    isDefaultHome: (android.content.Context) -> Boolean = DefaultLauncher::isDefault,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings = remember(context) { SettingsStore(context) }
 
-    var page by rememberSaveable {
-        mutableStateOf(SettingsPage.entries[initialPage.coerceIn(0, SettingsPage.entries.size - 1)])
+    // The Pen tab is for a tablet with a fast pen. Other tablets do not see it.
+    val tabs = remember(device) { SettingsTab.entries.filter { it != SettingsTab.Pen || device.hasVendorControl } }
+    var openTab by rememberSaveable {
+        mutableStateOf(SettingsTab.entries[initialPage.coerceIn(0, SettingsTab.entries.size - 1)])
     }
+    val tab = if (openTab in tabs) openTab else SettingsTab.Screen
+    var showCredits by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var choice by remember { mutableStateOf<Choice?>(null) }
 
@@ -107,170 +107,149 @@ fun SettingsScreen(
     val inkDelay by settings.inkRedrawDelayMillis.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_INK_DELAY_MILLIS)
 
     // Which fast pen modes closed the app. Read from a small file each time
-    // the Pen page opens, off the main thread.
+    // the Pen tab opens, off the main thread.
     val penGuard = remember(context) { EinkDevices.guard(context) }
     var crashedPens by remember { mutableStateOf(emptySet<FastPenPath>()) }
-    LaunchedEffect(page) {
-        if (page != SettingsPage.Pen) return@LaunchedEffect
+    LaunchedEffect(tab) {
+        if (tab != SettingsTab.Pen) return@LaunchedEffect
         crashedPens = withContext(AppDispatchers.io) {
             FastPenPath.entries.filterNot(penGuard::mayTry).toSet()
         }
     }
 
     // Asking the package manager is a binder call, so it runs off the main
-    // thread: once when the screen opens, and again when the role request
-    // comes back.
-    var isDefault by remember { mutableStateOf(false) }
-    var isDefaultChecks by remember { mutableStateOf(0) }
-    LaunchedEffect(isDefaultChecks) {
-        isDefault = withContext(AppDispatchers.io) { DefaultLauncher.isDefault(context) }
-        if (isDefaultChecks > 0) {
-            AppLog.i(TAG, "Home role checked again. Default now: $isDefault")
-            status = if (isDefault) "Margin is the home app" else "Margin is not the home app yet"
+    // thread: when the screen opens, each time it comes back in front (the
+    // user may have picked the home app in the tablet settings), and again
+    // when the role request comes back. Null until the first answer, so the
+    // row is not drawn for a moment and then taken away.
+    var isDefault by remember { mutableStateOf<Boolean?>(null) }
+    var homeChecks by remember { mutableIntStateOf(0) }
+    // True from the press on "Set as Home App" until the answer is shown.
+    var asked by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(homeChecks) {
+        val check = scope.launch {
+            val now = withContext(AppDispatchers.io) { isDefaultHome(context) }
+            isDefault = now
+            if (asked) {
+                asked = false
+                AppLog.i(TAG, "Home role checked again. Default now: $now")
+                status = if (now) "Margin is the home app" else "Not the home app yet"
+            }
         }
+        onPauseOrDispose { check.cancel() }
     }
     var showManualSteps by remember { mutableStateOf(false) }
     val roleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) {
-        isDefaultChecks++
+        homeChecks++
     }
 
     val storage = rememberStorageActions(onStatus = { status = it })
 
-    fun open(next: SettingsPage) {
+    fun open(next: SettingsTab) {
         status = null
-        page = next
+        openTab = next
     }
 
     fun changeWindow(transform: (WindowSettings) -> WindowSettings) {
         context.findActivity()?.let { ScreenWindow.change(it, transform) }
     }
 
-    // Back goes up one level first. Home's own handler takes it from the menu.
-    val parent = if (page == SettingsPage.About) SettingsPage.Help else SettingsPage.Menu
-    BackHandler(enabled = page != SettingsPage.Menu) { open(parent) }
+    // The tabs are not levels, so Back leaves Settings from any of them. Only
+    // the credits are a level: Back from there goes to the About tab.
+    BackHandler(enabled = showCredits) { showCredits = false }
 
-    val rows: List<Setting> = when (page) {
-        SettingsPage.Menu -> SettingsPage.entries
-            .filter { it != SettingsPage.Menu && it != SettingsPage.About }
-            .map { entry ->
-                Setting(title = entry.title, help = entry.summary, icon = entry.icon, onClick = { open(entry) })
+    val rows: List<Setting> = when (tab) {
+        SettingsTab.Screen -> buildList {
+            if (isDefault == false) {
+                add(
+                    Setting(
+                        title = "Set as Home App",
+                        icon = Lucide.House,
+                        onClick = {
+                            asked = true
+                            status = setAsHome(
+                                context = context,
+                                startRoleRequest = { intent -> roleLauncher.launch(intent) },
+                                showSteps = { showManualSteps = true },
+                            )
+                        },
+                    ),
+                )
             }
-
-        SettingsPage.HomeApp -> listOf(
-            Setting(
-                title = "Set as home app",
-                help = if (isDefault) {
-                    "Done. Margin is the home app."
-                } else {
-                    "Android asks which home app you want. Choose Margin."
-                },
-                icon = Lucide.House,
-                enabled = !isDefault,
-                trailing = if (isDefault) Lucide.Check else Lucide.ChevronRight,
-                onClick = {
-                    status = setAsHome(
-                        context = context,
-                        startRoleRequest = { intent -> roleLauncher.launch(intent) },
-                        showSteps = { showManualSteps = true },
-                    )
-                },
-            ),
-            Setting(
-                title = "Check again",
-                help = "Press this after you changed the home app in the tablet settings.",
-                icon = Lucide.RefreshCw,
-                trailing = null,
-                // The answer comes from the check above, off the main thread.
-                onClick = { isDefaultChecks++ },
-            ),
-        )
-
-        SettingsPage.Look -> listOf(
-            Setting.switch(
-                title = "Plants",
-                help = "A small plant drawing at the top of each screen.",
-                icon = Lucide.Sprout,
-                on = artOn,
-                onChange = { scope.launch { settings.setBotanicalArt(it) } },
-            ),
-            Setting.switch(
-                title = "Icon Names",
-                help = "Show the words Read, Write, Journal and Apps under the icons on Home.",
-                icon = Lucide.Type,
-                on = homeLabels,
-                onChange = { scope.launch { settings.setHomeLabels(it) } },
-            ),
-            Setting.switch(
-                title = "Status Bar",
-                help = "The Android bar with the clock. When off, swipe down to see it.",
-                icon = Lucide.BatteryMedium,
-                on = !window.statusBarHidden,
-                onChange = { show -> changeWindow { it.copy(statusBarHidden = !show) } },
-            ),
-            Setting.switch(
-                title = "Landscape Mode",
-                help = "Turn the screen sideways. The icon at the top does it too.",
-                icon = Lucide.RotateCwSquare,
-                on = window.landscape,
-                onChange = { on -> changeWindow { it.copy(landscape = on) } },
-            ),
-            Setting.switch(
-                title = "Flip Landscape",
-                help = "Use it if the tablet keys end up under your hand.",
-                icon = Lucide.RefreshCw,
-                on = window.landscapeFlipped,
-                enabled = window.landscape,
-                onChange = { on -> changeWindow { it.copy(landscapeFlipped = on) } },
-            ),
-            Setting.switch(
-                title = "Auto Refresh",
-                help = "A full refresh each time you open another screen.",
-                icon = Lucide.Monitor,
-                on = fullRefresh,
-                onChange = { scope.launch { settings.setFullRefreshOnBigChange(it) } },
-            ),
-            Setting(
-                title = "Force Refresh",
-                help = "The screen goes black for a moment and comes back clean.",
-                icon = Lucide.RefreshCw,
-                trailing = null,
-                onClick = { context.findActivity()?.let(ScreenRefresh::run) },
-            ),
-        )
-
-        SettingsPage.Pen -> if (!device.hasVendorControl) {
-            listOf(
-                Setting(
-                    title = "Pen Mode",
-                    help = "This tablet has no fast pen that the app knows. The app draws the line.",
-                    icon = Lucide.PenLine,
-                    value = penModeLabel(SettingsStore.FAST_PEN_OFF),
-                    enabled = false,
-                    trailing = null,
-                    onClick = {},
+            add(
+                Setting.switch(
+                    title = "Plants",
+                    icon = Lucide.Sprout,
+                    on = artOn,
+                    onChange = { scope.launch { settings.setBotanicalArt(it) } },
                 ),
             )
-        } else {
-            val closedApp = penModePath(fastPen)?.takeIf { it in crashedPens }
-            listOf(
+            add(
+                Setting.switch(
+                    title = "Icon Names",
+                    icon = Lucide.Type,
+                    on = homeLabels,
+                    onChange = { scope.launch { settings.setHomeLabels(it) } },
+                ),
+            )
+            add(
+                Setting.switch(
+                    title = "Status Bar",
+                    icon = Lucide.BatteryMedium,
+                    on = !window.statusBarHidden,
+                    onChange = { show -> changeWindow { it.copy(statusBarHidden = !show) } },
+                ),
+            )
+            add(
+                Setting.switch(
+                    title = "Landscape Mode",
+                    icon = Lucide.RotateCwSquare,
+                    on = window.landscape,
+                    onChange = { on -> changeWindow { it.copy(landscape = on) } },
+                ),
+            )
+            if (window.landscape) {
+                add(
+                    Setting.switch(
+                        title = "Flip Landscape",
+                        icon = Lucide.RefreshCw,
+                        on = window.landscapeFlipped,
+                        onChange = { on -> changeWindow { it.copy(landscapeFlipped = on) } },
+                    ),
+                )
+            }
+            add(
+                Setting.switch(
+                    title = "Auto Refresh",
+                    icon = Lucide.Monitor,
+                    on = fullRefresh,
+                    onChange = { scope.launch { settings.setFullRefreshOnBigChange(it) } },
+                ),
+            )
+            add(
+                Setting(
+                    title = "Force Refresh",
+                    icon = Lucide.RefreshCw,
+                    onClick = { context.findActivity()?.let(ScreenRefresh::run) },
+                ),
+            )
+        }
+
+        SettingsTab.Pen -> buildList {
+            add(
                 Setting(
                     title = "Pen Mode",
-                    help = if (closedApp != null) {
-                        "${penModeLabel(fastPen)} closed the app once. The app draws the line now."
-                    } else {
-                        "Normal is safe. Fast is quicker, but it is a test."
-                    },
                     icon = Lucide.PenLine,
                     value = penModeLabel(fastPen),
                     onClick = {
                         choice = Choice(
                             title = "Pen Mode",
-                            message = PEN_MODE_STEPS,
+                            message = PEN_MODE_HELP,
                             options = PEN_MODES.map { mode ->
                                 val path = penModePath(mode)
-                                val label = penModeLabel(mode) + if (path in crashedPens) ", closed the app once" else ""
+                                val label = penModeLabel(mode) + if (path in crashedPens) " (closed the app)" else ""
                                 label to {
                                     scope.launch {
                                         // Both or neither: leaving Settings at once must not
@@ -288,10 +267,31 @@ fun SettingsScreen(
                         )
                     },
                 ),
+            )
+            if (fastPen != SettingsStore.FAST_PEN_OFF) {
+                add(
+                    Setting(
+                        title = "Redraw Delay",
+                        icon = Lucide.History,
+                        value = "$inkDelay ms",
+                        onClick = {
+                            choice = Choice(
+                                title = "Redraw Delay",
+                                message = REDRAW_DELAY_HELP,
+                                options = REDRAW_DELAYS.map { millis ->
+                                    "$millis ms" to { scope.launch { settings.setInkRedrawDelayMillis(millis) } }
+                                },
+                                current = REDRAW_DELAYS.indexOf(inkDelay),
+                            )
+                        },
+                    ),
+                )
+            }
+            add(
                 Setting(
                     title = "Try the Pen",
-                    help = "Write a few words with the mode you picked. Nothing is saved.",
                     icon = Lucide.Pencil,
+                    trailing = Lucide.ChevronRight,
                     onClick = {
                         runCatching {
                             context.startActivity(
@@ -301,159 +301,145 @@ fun SettingsScreen(
                         }.onFailure { AppLog.e(TAG, "Could not open the pen page", it) }
                     },
                 ),
+            )
+            add(
                 Setting(
-                    title = "Redraw Delay",
-                    help = "Fast modes only. Longer if a line blinks or shows twice.",
-                    icon = Lucide.History,
-                    value = "$inkDelay ms",
-                    enabled = fastPen != SettingsStore.FAST_PEN_OFF,
+                    title = "Device Test",
+                    icon = Lucide.Wrench,
+                    trailing = Lucide.ChevronRight,
                     onClick = {
-                        choice = Choice(
-                            title = "Redraw Delay",
-                            message = REDRAW_DELAY_HELP,
-                            options = REDRAW_DELAYS.map { millis ->
-                                "$millis ms" to { scope.launch { settings.setInkRedrawDelayMillis(millis) } }
-                            },
-                            current = REDRAW_DELAYS.indexOf(inkDelay),
-                        )
+                        runCatching {
+                            context.startActivity(
+                                Intent(context, io.github.foxesrcool1.margin.ui.devicetest.DeviceTestActivity::class.java),
+                            )
+                        }.onFailure { AppLog.e(TAG, "Could not open the device test", it) }
                     },
                 ),
             )
         }
 
-        SettingsPage.Backup -> listOf(
+        SettingsTab.Files -> listOf(
             Setting(
-                title = "Back up",
-                help = "Save every book, note and journal page into one zip file.",
+                title = "Back Up",
                 icon = Lucide.Upload,
                 enabled = !storage.busy,
                 onClick = storage.backUp,
             ),
             Setting(
                 title = "Restore",
-                help = "Bring back the files of a backup zip. Files with the same name are replaced.",
                 icon = Lucide.Download,
                 enabled = !storage.busy,
                 onClick = storage.restore,
             ),
-            Setting(
-                title = "Read the folder again",
-                help = "Use it when a book or note that you copied in by hand does not show.",
-                icon = Lucide.RefreshCw,
-                enabled = !storage.busy,
-                trailing = null,
-                onClick = storage.rebuildIndex,
-            ),
-            Setting(
-                title = "Where the files are",
-                // Without the start that every tablet shares, so the part that
-                // matters fits in two lines.
-                help = storage.folderPath.removePrefix("/storage/emulated/0/"),
-                icon = Lucide.HardDrive,
-                enabled = false,
-                trailing = null,
-                onClick = {},
-            ),
         )
 
-        SettingsPage.Updates -> listOf(
-            Setting(
-                title = "Check for updates",
-                help = "You have ${BuildConfig.VERSION_NAME}. The app goes online only when you press this.",
-                icon = Lucide.Download,
-                onClick = onOpenUpdates,
-            ),
-        )
-
-        SettingsPage.Help -> listOf(
-            Setting(
-                title = "Log",
-                help = "What the app did and what went wrong. Send it with a problem report.",
-                icon = Lucide.ScrollText,
-                onClick = onOpenLog,
-            ),
-            Setting(
-                title = "Device test",
-                help = "Tests of the screen and the pen. The results go to the log.",
-                icon = Lucide.Wrench,
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(context, io.github.foxesrcool1.margin.ui.devicetest.DeviceTestActivity::class.java),
-                        )
-                    }.onFailure { AppLog.e(TAG, "Could not open the device test", it) }
-                },
-            ),
-            Setting(
-                title = "Design demo",
-                help = "Every button, list and dialog of the app on one screen.",
-                icon = Lucide.LayoutGrid,
-                onClick = onOpenDemo,
-            ),
-            Setting(
-                title = "Credits",
-                help = SettingsPage.About.summary,
-                icon = Lucide.Info,
-                onClick = { open(SettingsPage.About) },
-            ),
-            Setting(
-                title = "Support this app",
-                help = "It is free and stays free. If it helps you, you can buy me a coffee.",
-                icon = Lucide.Coffee,
-                trailing = null,
-                onClick = { WebLinks.open(context, WebLinks.KO_FI) },
-            ),
-            Setting(
-                title = "Source code",
-                help = "Open source, Apache-2.0, on GitHub. Bug reports and changes are welcome.",
-                icon = Lucide.FileText,
-                trailing = null,
-                onClick = { WebLinks.open(context, WebLinks.SOURCE) },
-            ),
-        )
-
-        SettingsPage.About -> emptyList()
+        SettingsTab.About -> buildList {
+            add(
+                Setting(
+                    title = "Updates",
+                    icon = Lucide.Download,
+                    // The version without the flavour: 1.0.1, not 1.0.1-viwoods.
+                    value = BuildConfig.VERSION_NAME.substringBefore('-'),
+                    onClick = onOpenUpdates,
+                ),
+            )
+            add(
+                Setting(
+                    title = "Log",
+                    icon = Lucide.ScrollText,
+                    trailing = Lucide.ChevronRight,
+                    onClick = onOpenLog,
+                ),
+            )
+            add(
+                Setting(
+                    title = "Credits",
+                    icon = Lucide.Info,
+                    trailing = Lucide.ChevronRight,
+                    onClick = {
+                        status = null
+                        showCredits = true
+                    },
+                ),
+            )
+            add(
+                Setting(
+                    title = "Support This App",
+                    icon = Lucide.Coffee,
+                    onClick = { WebLinks.open(context, WebLinks.KO_FI) },
+                ),
+            )
+            add(
+                Setting(
+                    title = "Source Code",
+                    icon = Lucide.FileText,
+                    onClick = { WebLinks.open(context, WebLinks.SOURCE) },
+                ),
+            )
+            // A page for the people who build the app, not for the people who use it.
+            if (BuildConfig.DEBUG) {
+                add(
+                    Setting(
+                        title = "Design Demo",
+                        icon = Lucide.LayoutGrid,
+                        trailing = Lucide.ChevronRight,
+                        onClick = onOpenDemo,
+                    ),
+                )
+            }
+        }
     }
 
     ScreenScaffold(
-        title = page.title,
-        overline = if (page == SettingsPage.Menu) "Margin ${BuildConfig.VERSION_NAME}" else "Settings",
+        title = if (showCredits) "Credits" else "Settings",
         plant = Plants.Settings,
         modifier = modifier,
-        onBack = if (page == SettingsPage.Menu) onBack else ({ open(parent) }),
-        backIcon = if (page == SettingsPage.Menu) Lucide.House else Lucide.ArrowLeft,
-        backLabel = if (page == SettingsPage.Menu) "Home" else "Back",
+        onBack = if (showCredits) ({ showCredits = false }) else onBack,
+        backIcon = if (showCredits) Lucide.ArrowLeft else Lucide.House,
+        backLabel = if (showCredits) "Back" else "Home",
     ) {
-        if (status != null) {
-            CapsLabel(
-                text = status.orEmpty(),
-                style = EinkType.capsSmall.copy(color = EinkColors.Faded),
-                maxLines = 2,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        when {
-            page == SettingsPage.About -> AboutSection(modifier = Modifier.weight(1f))
-
-            page == SettingsPage.HomeApp && showManualSteps -> {
-                DefaultLauncher.manualSteps.forEachIndexed { index, step ->
-                    EinkText(
-                        text = "${index + 1}. $step",
-                        style = EinkType.body,
-                        modifier = Modifier.padding(vertical = 4.dp),
+        if (showCredits) {
+            AboutSection(modifier = Modifier.weight(1f))
+        } else {
+            // What a tab shows: the status line, the rows, and for Files, where the files are.
+            val body: @Composable ColumnScope.() -> Unit = {
+                if (status != null) {
+                    CapsLabel(
+                        text = status.orEmpty(),
+                        style = EinkType.capsSmall.copy(color = EinkColors.Faded),
+                        maxLines = 2,
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                key(page) { SettingsList(rows = rows, modifier = Modifier.weight(1f)) }
+
+                key(tab) { SettingsList(rows = rows, modifier = Modifier.weight(1f)) }
+
+                // Without the start that every tablet shares.
+                if (tab == SettingsTab.Files) {
+                    Row(
+                        modifier = Modifier.padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        EinkIcon(icon = Lucide.HardDrive, size = 18.dp, color = EinkColors.Faded)
+                        EinkText(
+                            text = storage.folderPath.removePrefix("/storage/emulated/0/"),
+                            style = EinkType.help.copy(color = EinkColors.Faded),
+                            maxLines = 2,
+                        )
+                    }
+                }
             }
 
-            else -> key(page) {
-                SettingsList(
-                    rows = rows,
-                    modifier = Modifier.weight(1f),
-                    helpLines = if (page == SettingsPage.Menu) 1 else 2,
-                )
+            if (LocalWideScreen.current) {
+                Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SettingsTabs(tabs = tabs, selected = tab, onSelect = ::open, vertical = true)
+                    Column(modifier = Modifier.weight(1f), content = body)
+                }
+            } else {
+                SettingsTabs(tabs = tabs, selected = tab, onSelect = ::open)
+                Spacer(modifier = Modifier.height(8.dp))
+                body()
             }
         }
     }
@@ -475,13 +461,27 @@ fun SettingsScreen(
 
     if (storage.confirmRestore != null) {
         ConfirmDialog(
-            title = "Restore from a backup?",
-            message = "Every file in the backup replaces the one on this tablet with " +
-                "the same name. Files that are not in the backup stay where they are.",
+            title = "Restore Backup?",
+            message = RESTORE_HELP,
             confirmText = "Restore",
             cancelText = "Cancel",
             onConfirm = storage.confirmRestore,
             onDismiss = storage.cancelRestore,
+        )
+    }
+
+    if (showManualSteps) {
+        ConfirmDialog(
+            title = "Set as Home App",
+            message = DefaultLauncher.manualSteps.mapIndexed { index, step -> "${index + 1}. $step" }.joinToString("\n"),
+            confirmText = "Check",
+            cancelText = "Close",
+            onConfirm = {
+                showManualSteps = false
+                asked = true
+                homeChecks++
+            },
+            onDismiss = { showManualSteps = false },
         )
     }
 }
@@ -507,18 +507,14 @@ internal val PEN_MODES = listOf(
     SettingsStore.FAST_PEN_AUTODRAW,
 )
 
-/**
- * What the pen modes are and what to do, above the choice. Short: the dialog
- * does not scroll, and in landscape a long text pushed the last choice off.
- */
-internal const val PEN_MODE_STEPS =
-    "Normal: the app draws the line. Safe.\n" +
-        "Fast: the tablet draws it. Quicker, but a test.\n" +
-        "Try Fast 1, then Fast 2. Keep the best one."
+/** One line above the choice. The dialog does not scroll, and in landscape a long text pushed the last choice off. */
+internal const val PEN_MODE_HELP = "Fast modes are a test. Try Fast 1, then Fast 2."
 
 internal val REDRAW_DELAYS = listOf(600L, 900L, 1200L, 1600L)
 
-internal const val REDRAW_DELAY_HELP = "The wait after you lift the pen. Longer is safer."
+internal const val REDRAW_DELAY_HELP = "Wait after the pen lifts."
+
+internal const val RESTORE_HELP = "Files with the same name are replaced."
 
 internal fun penModeLabel(mode: String): String = when (mode) {
     SettingsStore.FAST_PEN_WRITING -> "Fast 1"
@@ -551,7 +547,7 @@ private fun setAsHome(
         AppLog.i(TAG, "Asking for the home role")
         return runCatching {
             startRoleRequest(intent)
-            "The system is asking. Choose Margin."
+            "Choose Margin"
         }.getOrElse {
             AppLog.w(TAG, "The home role request would not start", it)
             openSettingsOrSteps(context, showSteps)
@@ -571,11 +567,11 @@ private fun openSettingsOrSteps(
         val started = runCatching { context.startActivity(intent) }.isSuccess
         if (started) {
             AppLog.i(TAG, "Opened a settings screen to pick the home app")
-            return "Settings is open. Pick Margin as the home app."
+            return "Pick Margin as the home app"
         }
     }
 
     AppLog.w(TAG, "No settings route worked. Showing the written steps.")
     showSteps()
-    return "This tablet hides the settings app. Follow these steps."
+    return "Follow the steps"
 }

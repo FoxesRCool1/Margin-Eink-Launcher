@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -20,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.foxesrcool1.margin.BuildConfig
+import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.update.ApkInstaller
 import io.github.foxesrcool1.margin.core.update.AppVersion
 import io.github.foxesrcool1.margin.core.update.UpdateManager
@@ -36,9 +38,11 @@ import io.github.foxesrcool1.margin.design.components.InvertPressButton
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.design.components.TextPromptDialog
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Settings, Help, "Check for updates".
+ * Settings, About, Updates.
  *
  * Opening the screen is the user asking, so it checks at once. After that it
  * only shows what [UpdateManager] is doing. The download goes on if the user
@@ -49,17 +53,26 @@ fun UpdateScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val state by UpdateManager.state.collectAsStateWithLifecycle()
 
-    var installAllowed by remember { mutableStateOf(ApkInstaller.isAllowed(context)) }
-    var hasToken by remember { mutableStateOf(UpdateToken.read(context) != null) }
+    // Both answers come from a binder call or a file, so they are read off
+    // the main thread. Until they arrive the footer is not drawn.
+    var installAllowed by remember { mutableStateOf(true) }
+    var hasToken by remember { mutableStateOf(false) }
     var askForToken by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    // The user comes back from the system screen where they allowed installs.
+    // Also when the user comes back from the system screen where they allowed installs.
     LifecycleResumeEffect(Unit) {
-        installAllowed = ApkInstaller.isAllowed(context)
-        onPauseOrDispose { }
+        val read = scope.launch {
+            val (allowed, token) = withContext(AppDispatchers.io) {
+                ApkInstaller.isAllowed(context) to (UpdateToken.read(context) != null)
+            }
+            installAllowed = allowed
+            hasToken = token
+        }
+        onPauseOrDispose { read.cancel() }
     }
 
-    // The button that leads here says "Check for updates", so it checks,
+    // The row that leads here says "Updates", so it checks,
     // also when an answer from an hour ago is still standing. A download or
     // a finished download is left alone.
     LaunchedEffect(Unit) {
@@ -90,15 +103,19 @@ fun UpdateScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 
     if (askForToken) {
         TextPromptDialog(
-            title = "GitHub access token",
+            title = "Access Token",
             // The saved token is not shown again. An empty answer removes it.
             initialValue = "",
             allowEmpty = true,
             onConfirm = { typed ->
                 askForToken = false
-                UpdateToken.save(context, typed)
-                hasToken = UpdateToken.read(context) != null
-                UpdateManager.check(context)
+                scope.launch {
+                    hasToken = withContext(AppDispatchers.io) {
+                        UpdateToken.save(context, typed)
+                        UpdateToken.read(context) != null
+                    }
+                    UpdateManager.check(context)
+                }
             },
             onDismiss = { askForToken = false },
         )
@@ -147,11 +164,11 @@ fun UpdateContent(
             when (state) {
                 is UpdateState.Available -> {
                     Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-                    InvertPressButton(text = "Download and install", icon = Lucide.Download, onClick = onDownload)
+                    InvertPressButton(text = "Update", icon = Lucide.Download, onClick = onDownload)
                     val notes = UpdateStrings.plainNotes(state.release.notes)
                     if (notes.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(EinkDimens.blockGap))
-                        CapsLabel(text = "What is new", style = EinkType.capsSmall)
+                        CapsLabel(text = "What's New", style = EinkType.capsSmall)
                         HairlineDivider(color = EinkColors.Faded)
                         Spacer(modifier = Modifier.height(6.dp))
                         EinkText(
@@ -170,7 +187,7 @@ fun UpdateContent(
 
                 is UpdateState.Failed -> if (state.tokenProblem) {
                     Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-                    InvertPressButton(text = "Enter access token", onClick = onToken)
+                    InvertPressButton(text = "Add Token", onClick = onToken)
                 }
 
                 else -> Unit
@@ -185,20 +202,19 @@ fun UpdateContent(
             Spacer(modifier = Modifier.height(10.dp))
             if (!installAllowed) {
                 EinkText(
-                    text = "Android must allow this app to install its updates. Press the button, " +
-                        "turn the switch on, then come back.",
+                    text = "Allow installs from Margin, then come back.",
                     style = EinkType.body,
                 )
                 Spacer(modifier = Modifier.height(10.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap)) {
-                if (!installAllowed) InvertPressButton(text = "Allow installs", onClick = onAllowInstalls)
-                if (hasToken) InvertPressButton(text = "Change token", onClick = onToken)
+                if (!installAllowed) InvertPressButton(text = "Allow Installs", onClick = onAllowInstalls)
+                if (hasToken) InvertPressButton(text = "Change Token", onClick = onToken)
             }
             if (hasToken) {
                 Spacer(modifier = Modifier.height(10.dp))
                 CapsLabel(
-                    text = "An access token is saved",
+                    text = "Token saved",
                     style = EinkType.capsSmall.copy(color = EinkColors.Faded),
                 )
             }
@@ -210,22 +226,22 @@ fun UpdateContent(
 object UpdateStrings {
 
     fun headline(state: UpdateState): String = when (state) {
-        UpdateState.Idle -> "Not checked yet."
-        UpdateState.Checking -> "Asking GitHub."
-        is UpdateState.UpToDate -> "This is the newest version."
-        is UpdateState.Available -> "Version ${state.release.version} is ready."
-        is UpdateState.Downloading -> "Downloading version ${state.release.version}. ${state.percent} percent."
+        UpdateState.Idle -> "Not checked"
+        UpdateState.Checking -> "Checking"
+        is UpdateState.UpToDate -> "Up to date"
+        is UpdateState.Available -> "Version ${state.release.version} available"
+        is UpdateState.Downloading -> "Downloading ${state.release.version}, ${state.percent}%"
         is UpdateState.Ready ->
-            if (state.handedOver) "Version ${state.release.version} is downloaded." else "Starting the install."
-        is UpdateState.Failed -> "That did not work."
+            if (state.handedOver) "Downloaded ${state.release.version}" else "Installing"
+        is UpdateState.Failed -> "Failed"
     }
 
     fun detail(state: UpdateState): String? = when (state) {
         UpdateState.Idle, UpdateState.Checking -> null
         is UpdateState.UpToDate ->
-            if (state.newest == null) "GitHub has no release for this build yet." else "GitHub has ${state.newest}."
-        is UpdateState.Available -> "${megabytes(state.asset.sizeBytes)}. Your notes, books and settings stay."
-        is UpdateState.Downloading -> "You can leave this screen. The download goes on."
+            if (state.newest == null) "No release found" else "Latest is ${state.newest}"
+        is UpdateState.Available -> "${megabytes(state.asset.sizeBytes)}. Your files stay."
+        is UpdateState.Downloading -> "You can leave. It keeps going."
         is UpdateState.Ready -> state.note
         is UpdateState.Failed -> state.message
     }

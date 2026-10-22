@@ -76,15 +76,14 @@ fun LogViewerScreen(
                     // so it runs off the main thread. It froze the screen for
                     // up to two seconds.
                     copying = true
-                    status = "Copying the log files"
+                    status = "Copying"
                     scope.launch {
                         val copied = withContext(AppDispatchers.io) {
                             onCopyToDownloads?.invoke() ?: AppLog.copyAllToDownloads(context)
                         }
                         status = when (copied) {
-                            0 -> "No log file could be copied"
-                            1 -> "Copied 1 file to Download/Margin"
-                            else -> "Copied $copied files to Download/Margin"
+                            0 -> "Nothing copied"
+                            else -> "Copied to Download/Margin"
                         }
                         copying = false
                         refreshToken++
@@ -103,7 +102,7 @@ fun LogViewerScreen(
             pageSize = 5,
             rowHeight = LogRowHeight,
             state = state,
-            emptyText = "No log lines yet",
+            emptyText = "No log lines",
             modifier = Modifier.weight(1f),
         ) { _, line ->
             LogRow(line)

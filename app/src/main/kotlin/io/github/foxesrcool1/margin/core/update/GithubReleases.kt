@@ -38,13 +38,13 @@ class GithubReleases(
         val answer = try {
             http.getText("$apiBase/repos/$repository/releases?per_page=$PAGE_SIZE", headers(token, ACCEPT_JSON))
         } catch (error: IOException) {
-            return UpdateCheck.Failed("No connection to GitHub. Check the Wi-Fi. (${error.message})")
+            return UpdateCheck.Failed("No connection. Check the Wi-Fi. (${error.message})")
         }
 
         if (answer.code != 200) return failureFor(answer, hasToken = !token.isNullOrBlank())
 
         val releases = runCatching { ReleaseParser.parseList(answer.body) }.getOrElse {
-            return UpdateCheck.Failed("The answer from GitHub could not be read.")
+            return UpdateCheck.Failed("Could not read the answer.")
         }
         val newest = UpdateAssets.newestFor(releases, flavor, debug)
             ?: return UpdateCheck.UpToDate(newest = null)
@@ -107,27 +107,27 @@ class GithubReleases(
     }
 
     private fun failureFor(answer: HttpText, hasToken: Boolean): UpdateCheck.Failed = when (answer.code) {
-        401 -> UpdateCheck.Failed("GitHub refused the access token.", tokenProblem = true)
+        401 -> UpdateCheck.Failed("GitHub refused the token.", tokenProblem = true)
 
         403, 429 ->
             if (answer.headers["x-ratelimit-remaining"] == "0") {
-                UpdateCheck.Failed("GitHub allows 60 checks an hour without a token. Try again later.")
+                UpdateCheck.Failed("Limit is 60 checks an hour. Try again later.")
             } else {
-                UpdateCheck.Failed("GitHub refused the request, HTTP ${answer.code}.", tokenProblem = hasToken)
+                UpdateCheck.Failed("Refused, HTTP ${answer.code}.", tokenProblem = hasToken)
             }
 
         // GitHub says "not found" for a private repository, so as not to give away that it exists.
         404 ->
             if (hasToken) {
-                UpdateCheck.Failed("GitHub cannot find the repository with this access token.", tokenProblem = true)
+                UpdateCheck.Failed("Repository not found with this token.", tokenProblem = true)
             } else {
                 UpdateCheck.Failed(
-                    "GitHub cannot find the repository. If it is private, this app needs an access token.",
+                    "Repository not found. If it is private, add a token.",
                     tokenProblem = true,
                 )
             }
 
-        else -> UpdateCheck.Failed("GitHub answered HTTP ${answer.code}.")
+        else -> UpdateCheck.Failed("GitHub error, HTTP ${answer.code}.")
     }
 
     companion object {

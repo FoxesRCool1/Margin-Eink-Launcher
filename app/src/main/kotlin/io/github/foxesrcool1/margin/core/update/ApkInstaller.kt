@@ -101,14 +101,14 @@ object InstallMessages {
 
     fun forStatus(status: Int, detail: String?): String {
         val line = when (status) {
-            PackageInstaller.STATUS_FAILURE_ABORTED -> "The install was cancelled."
+            PackageInstaller.STATUS_FAILURE_ABORTED -> "Install cancelled."
             PackageInstaller.STATUS_FAILURE_BLOCKED -> "Android blocked the install."
             PackageInstaller.STATUS_FAILURE_CONFLICT ->
-                "The update does not fit over this app. It may be signed with a different key."
-            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "The update does not work on this tablet."
-            PackageInstaller.STATUS_FAILURE_INVALID -> "Android says the file is damaged."
-            PackageInstaller.STATUS_FAILURE_STORAGE -> "There is not enough free space."
-            else -> "The install failed."
+                "Signed with a different key."
+            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "Not compatible with this tablet."
+            PackageInstaller.STATUS_FAILURE_INVALID -> "The file is damaged."
+            PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough free space."
+            else -> "Install failed."
         }
         return if (detail.isNullOrBlank()) line else "$line ($detail)"
     }
@@ -135,7 +135,7 @@ class InstallStatusReceiver : BroadcastReceiver() {
                 val shown = confirm != null && runCatching {
                     context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }.onFailure { AppLog.e(TAG, "Could not show the confirm window", it) }.isSuccess
-                if (!shown) UpdateManager.onInstallFailed("Android could not show its install window.")
+                if (!shown) UpdateManager.onInstallFailed("Could not show the install window.")
             }
 
             PackageInstaller.STATUS_SUCCESS -> AppLog.i(TAG, "The install worked")

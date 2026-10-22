@@ -122,7 +122,7 @@ The owner decided on 2026-09-22: the app is free, open source under
 Apache-2.0, and the repository is public. There is no paid version and no
 plan for one. People who want to help pay for it can, at
 https://ko-fi.com/foxesrcool. That link lives in three places: the README,
-`.github/FUNDING.yml`, and Settings, Help, "Support this app". Decision 0020.
+`.github/FUNDING.yml`, and Settings, About, "Support This App". Decision 0020.
 
 - Nothing that identifies the owner beyond the GitHub name goes in the
   repository: no email address, no home path, no token.

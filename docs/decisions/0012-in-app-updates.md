@@ -14,7 +14,7 @@ found in the tablet tests would have cost that trip again.
 The app looks at the GitHub Releases of its own repository, downloads the
 APK that fits it, checks it, and hands it to Android to install.
 
-Settings, Help, "Check for updates". One press checks. One more press
+Settings, About, "Updates". One press checks. One more press
 downloads and installs. Android still shows its own "install this update?"
 window, and the app does not try to get round that.
 

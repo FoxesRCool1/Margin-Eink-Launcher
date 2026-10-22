@@ -162,7 +162,7 @@ decision 0020. What a new session must know:
   committed file. `CLAUDE.md`, "The source is public", has the rules. Anyone
   may read every doc here, so write them for a stranger too.
 - **Ko-fi is in three places** and nowhere else: README, `.github/FUNDING.yml`,
-  Settings, Help, "Support this app" (`ui/common/WebLinks.kt`). The app
+  Settings, About, "Support This App" (`ui/common/WebLinks.kt`). The app
   never asks for money. Do not add a reminder, a counter or a nag.
 - **The updater needs no token.** The token code stays for a private fork.
   The button is hidden until a check fails with "not found".
@@ -249,7 +249,7 @@ the start-up time.
 
 ### 3.3 Run the storage measurement
 
-Still open from step 4. Settings, Help, "Design demo", Dev, "Time 500 files".
+Still open from step 4. Settings, About, "Design Demo", Dev, "Time 500 files".
 `docs/decisions/0005-storage-layer.md` explains what the numbers decide.
 
 ### 3.4 Then the known gaps

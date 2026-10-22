@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -24,6 +25,7 @@ import io.github.foxesrcool1.margin.core.ink.InkTestData
 import io.github.foxesrcool1.margin.core.ink.PageTemplate
 import io.github.foxesrcool1.margin.core.log.LogLevel
 import io.github.foxesrcool1.margin.core.log.LogLine
+import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
@@ -43,16 +45,19 @@ import io.github.foxesrcool1.margin.ui.log.LogViewerScreen
 import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
 import io.github.foxesrcool1.margin.ui.reading.pdf.PdfReaderScreenshotSupport
 import io.github.foxesrcool1.margin.ui.settings.PEN_MODES
-import io.github.foxesrcool1.margin.ui.settings.PEN_MODE_STEPS
+import io.github.foxesrcool1.margin.ui.settings.PEN_MODE_HELP
 import io.github.foxesrcool1.margin.ui.settings.REDRAW_DELAYS
 import io.github.foxesrcool1.margin.ui.settings.REDRAW_DELAY_HELP
-import io.github.foxesrcool1.margin.ui.settings.SettingsPage
+import io.github.foxesrcool1.margin.ui.settings.RESTORE_HELP
+import io.github.foxesrcool1.margin.ui.settings.SettingsTab
 import io.github.foxesrcool1.margin.ui.settings.penModeLabel
+import io.github.foxesrcool1.margin.design.components.ConfirmDialogContent
 import io.github.foxesrcool1.margin.design.components.DialogOption
 import io.github.foxesrcool1.margin.design.components.OptionsDialogContent
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.core.eink.EinkCallResult
 import io.github.foxesrcool1.margin.core.eink.EinkDevice
+import io.github.foxesrcool1.margin.core.eink.EinkDevices
 import io.github.foxesrcool1.margin.core.eink.FastPenPath
 import io.github.foxesrcool1.margin.core.eink.PenTool
 import io.github.foxesrcool1.margin.core.eink.RefreshMode
@@ -71,6 +76,7 @@ import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitState
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -312,43 +318,85 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     // -- Settings ------------------------------------------------------------------------
 
-    private fun settings(page: SettingsPage, name: String) {
-        compose.setContent {
-            EinkTheme { SettingsScreen(onBack = {}, onOpenLog = {}, onOpenDemo = {}, initialPage = page.ordinal) }
-        }
-        capture(name)
-    }
-
-    @Test
-    fun settingsMenu() = settings(SettingsPage.Menu, "settings_menu")
-
-    @Test
-    fun settingsHomeApp() = settings(SettingsPage.HomeApp, "settings_home_app")
-
-    @Test
-    fun settingsLook() = settings(SettingsPage.Look, "settings_look")
-
-    @Test
-    fun settingsPen() = settings(SettingsPage.Pen, "settings_pen")
-
-    /** The Pen page as the tablet shows it: with vendor control, so the fast modes are there. */
-    @Test
-    fun settingsPenOnTheTablet() {
+    private fun settings(tab: SettingsTab, name: String, device: EinkDevice = EinkDevices.get(context)) {
         compose.setContent {
             EinkTheme {
                 SettingsScreen(
                     onBack = {},
                     onOpenLog = {},
                     onOpenDemo = {},
-                    initialPage = SettingsPage.Pen.ordinal,
-                    device = VendorLikeDevice,
+                    initialPage = tab.ordinal,
+                    device = device,
+                    isDefaultHome = { true },
                 )
             }
         }
-        capture("settings_pen_tablet")
+        capture(name)
     }
 
-    /** The choice of pen mode, with its steps. The longest dialog text in the app. */
+    /** The Screen tab on a tablet without a vendor pen: three tabs, no Pen. */
+    @Test
+    fun settingsScreen() = settings(SettingsTab.Screen, "settings_screen")
+
+    /** The first run: Margin is not the home app yet, so "Set as Home App" is the first row. */
+    @Test
+    fun settingsScreenNotHome() {
+        compose.setContent {
+            EinkTheme {
+                SettingsScreen(onBack = {}, onOpenLog = {}, onOpenDemo = {}, isDefaultHome = { false })
+            }
+        }
+        waitForText("Set as Home App")
+        capture("settings_screen_not_home")
+    }
+
+    /** The Pen tab as the tablet shows it: with vendor control, so the tab is there. */
+    @Test
+    fun settingsPen() = settings(SettingsTab.Pen, "settings_pen", VendorLikeDevice)
+
+    /** The tallest Pen tab: a fast mode is on, so Redraw Delay is there too. */
+    @Test
+    fun settingsPenFast() {
+        val store = SettingsStore(context)
+        runBlocking { store.setFastPenMode(SettingsStore.FAST_PEN_WRITING) }
+        try {
+            compose.setContent {
+                EinkTheme {
+                    SettingsScreen(
+                        onBack = {},
+                        onOpenLog = {},
+                        onOpenDemo = {},
+                        initialPage = SettingsTab.Pen.ordinal,
+                        device = VendorLikeDevice,
+                    )
+                }
+            }
+            waitForText("Redraw Delay")
+            capture("settings_pen_fast")
+        } finally {
+            runBlocking { store.setFastPenMode(SettingsStore.FAST_PEN_OFF) }
+        }
+    }
+
+    @Test
+    fun settingsFiles() = settings(SettingsTab.Files, "settings_files")
+
+    @Test
+    fun settingsAbout() = settings(SettingsTab.About, "settings_about")
+
+    /** The credits are a page of their own, one step down from the About tab. */
+    @Test
+    fun settingsCredits() {
+        compose.setContent {
+            EinkTheme {
+                SettingsScreen(onBack = {}, onOpenLog = {}, onOpenDemo = {}, initialPage = SettingsTab.About.ordinal)
+            }
+        }
+        compose.onNodeWithText("Credits").performClick()
+        capture("settings_credits")
+    }
+
+    /** The choice of pen mode. */
     @Test
     fun settingsPenModeDialog() {
         compose.setContent {
@@ -356,10 +404,10 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                 Box(modifier = Modifier.fillMaxSize().background(EinkColors.Paper).padding(16.dp)) {
                     OptionsDialogContent(
                         title = "Pen Mode",
-                        message = PEN_MODE_STEPS,
+                        message = PEN_MODE_HELP,
                         options = PEN_MODES.mapIndexed { index, mode ->
                             DialogOption(
-                                label = penModeLabel(mode) + if (index == 1) ", closed the app once" else "",
+                                label = penModeLabel(mode) + if (index == 1) " (closed the app)" else "",
                                 icon = if (index == 0) Lucide.Check else Lucide.Minus,
                             ) {}
                         },
@@ -393,16 +441,24 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     }
 
     @Test
-    fun settingsBackup() = settings(SettingsPage.Backup, "settings_backup")
-
-    @Test
-    fun settingsUpdates() = settings(SettingsPage.Updates, "settings_updates")
-
-    @Test
-    fun settingsHelp() = settings(SettingsPage.Help, "settings_help")
-
-    @Test
-    fun settingsCredits() = settings(SettingsPage.About, "settings_credits")
+    fun settingsRestoreDialog() {
+        compose.setContent {
+            EinkTheme {
+                Box(modifier = Modifier.fillMaxSize().background(EinkColors.Paper).padding(16.dp)) {
+                    ConfirmDialogContent(
+                        title = "Restore Backup?",
+                        message = RESTORE_HELP,
+                        confirmText = "Restore",
+                        cancelText = "Cancel",
+                        onConfirm = {},
+                        onDismiss = {},
+                        modifier = Modifier.widthIn(max = 440.dp),
+                    )
+                }
+            }
+        }
+        capture("settings_restore_dialog")
+    }
 
     @Test
     fun logViewer() {
@@ -556,6 +612,28 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         "split_swapped_apps",
         swapped = true,
     ) { SettingsScreen(onBack = {}, onOpenLog = {}, onOpenDemo = {}) }
+
+    /** Settings as the main half, 320 dp wide on its side, with all four tabs: the narrowest strip. */
+    @Test
+    fun splitSettingsPenTabBesideApps() = split(
+        PanePage.Tab(LauncherRoute.Apps),
+        "split_settings_pen",
+        swapped = true,
+    ) {
+        SettingsScreen(
+            onBack = {},
+            onOpenLog = {},
+            onOpenDemo = {},
+            initialPage = SettingsTab.Pen.ordinal,
+            device = VendorLikeDevice,
+        )
+    }
+
+    /** Settings in the second half, which has the smaller margins. */
+    @Test
+    fun splitSettingsInTheSecondHalf() = split(PanePage.Tab(LauncherRoute.Settings), "split_settings_pane") {
+        AppsScreen(onBack = {}, previewApps = fewApps, previewFolders = someFolders)
+    }
 
     @Test
     fun splitInkNoteBesideATypedNote() {

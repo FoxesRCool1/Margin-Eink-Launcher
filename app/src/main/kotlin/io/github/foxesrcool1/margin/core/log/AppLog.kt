@@ -128,20 +128,29 @@ object AppLog {
     /**
      * Copies one file into `Download/Margin/`. Returns the display name
      * on success, or null. MediaStore needs no permission for this on API 29
-     * and above.
+     * and above. An earlier copy of the same file is replaced, so the folder
+     * holds one copy and not "name (1)", "name (2)" after every press.
      */
     fun copyToDownloads(context: Context, file: File): String? {
         if (!file.exists()) return null
+        val folder = Environment.DIRECTORY_DOWNLOADS + "/Margin"
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, file.name)
             put(MediaStore.Downloads.MIME_TYPE, "text/plain")
-            put(
-                MediaStore.Downloads.RELATIVE_PATH,
-                Environment.DIRECTORY_DOWNLOADS + "/Margin",
-            )
+            put(MediaStore.Downloads.RELATIVE_PATH, folder)
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
+        // Android stores the folder with a slash at the end. A row from an
+        // earlier install belongs to that install and stays, and then the new
+        // copy gets a number: that is the most this can do without permission.
+        runCatching {
+            resolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} IN (?, ?)",
+                arrayOf(file.name, folder, "$folder/"),
+            )
+        }.onFailure { Log.w("AppLog", "Could not remove the earlier copy of ${file.name}", it) }
         val uri = runCatching {
             resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
         }.getOrNull() ?: return null

@@ -60,7 +60,7 @@ class InstallMessagesTest {
     @Test
     fun `each failure has its own plain line`() {
         assertEquals(
-            "The install was cancelled.",
+            "Install cancelled.",
             InstallMessages.forStatus(PackageInstaller.STATUS_FAILURE_ABORTED, null),
         )
         assertTrue(InstallMessages.forStatus(PackageInstaller.STATUS_FAILURE_STORAGE, "").contains("free space"))
@@ -70,6 +70,6 @@ class InstallMessagesTest {
     @Test
     fun `what Android said is kept, because the owner has no logcat`() {
         val line = InstallMessages.forStatus(PackageInstaller.STATUS_FAILURE, "INSTALL_FAILED_VERSION_DOWNGRADE")
-        assertEquals("The install failed. (INSTALL_FAILED_VERSION_DOWNGRADE)", line)
+        assertEquals("Install failed. (INSTALL_FAILED_VERSION_DOWNGRADE)", line)
     }
 }

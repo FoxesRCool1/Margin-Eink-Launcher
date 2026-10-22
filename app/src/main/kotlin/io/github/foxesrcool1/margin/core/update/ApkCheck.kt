@@ -37,19 +37,18 @@ object ApkCheck {
         if (archive == null) return ApkVerdict.Refused("The file is not an Android app.")
 
         if (archive.packageName != installed.packageName) {
-            return ApkVerdict.Refused("The file is a different app: ${archive.packageName}.")
+            return ApkVerdict.Refused("Different app: ${archive.packageName}.")
         }
         if (archive.versionCode < installed.versionCode) {
             return ApkVerdict.Refused(
-                "The file is older than this app. Android does not put an older version over a newer one.",
+                "This is an older version.",
             )
         }
         val theirs = archive.signers
         val ours = installed.signers
         if (theirs != null && ours != null && theirs.intersect(ours).isEmpty()) {
             return ApkVerdict.Refused(
-                "The file is signed with a different key, so it cannot go over this app. " +
-                    "A debug build and a release build do not mix.",
+                "Signed with a different key.",
             )
         }
         return ApkVerdict.Ok

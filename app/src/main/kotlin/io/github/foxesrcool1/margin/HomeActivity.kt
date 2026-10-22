@@ -38,7 +38,7 @@ import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
 import io.github.foxesrcool1.margin.ui.ink.InkCanvasView
 import io.github.foxesrcool1.margin.ui.writing.WritingScreen
 import io.github.foxesrcool1.margin.ui.log.LogViewerScreen
-import io.github.foxesrcool1.margin.ui.settings.SettingsPage
+import io.github.foxesrcool1.margin.ui.settings.SettingsTab
 import io.github.foxesrcool1.margin.ui.settings.SettingsScreen
 import io.github.foxesrcool1.margin.ui.split.BesideActivity
 import io.github.foxesrcool1.margin.ui.split.LocalPageOpener
@@ -401,12 +401,12 @@ private fun LauncherHost(
         LauncherRoute.Settings -> SettingsScreen(
             onBack = { onRoute(LauncherRoute.Home) },
             onOpenLog = {
-                settingsPage = SettingsPage.Help.ordinal
+                settingsPage = SettingsTab.About.ordinal
                 onRoute(LauncherRoute.Log)
             },
             onOpenDemo = onOpenDemo,
             onOpenUpdates = {
-                settingsPage = SettingsPage.Updates.ordinal
+                settingsPage = SettingsTab.About.ordinal
                 onRoute(LauncherRoute.Update)
             },
             initialPage = settingsPage,

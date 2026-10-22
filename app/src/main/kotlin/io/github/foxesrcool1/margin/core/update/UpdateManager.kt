@@ -74,7 +74,7 @@ object UpdateManager {
         val busy = mutableState.value.let { it is UpdateState.Checking || it is UpdateState.Downloading }
         if (busy) return
         val installed = installedVersion ?: run {
-            mutableState.value = UpdateState.Failed("This build has no version number: ${BuildConfig.VERSION_NAME}")
+            mutableState.value = UpdateState.Failed("No version number: ${BuildConfig.VERSION_NAME}")
             return
         }
         val app = context.applicationContext
@@ -85,7 +85,7 @@ object UpdateManager {
                 releasesFactory().check(installed, BuildConfig.FLAVOR, BuildConfig.DEBUG, UpdateToken.read(app))
             }.getOrElse { error ->
                 AppLog.e(TAG, "The check threw", error)
-                UpdateCheck.Failed("The check failed: ${error.message}")
+                UpdateCheck.Failed("Check failed: ${error.message}")
             }
             AppLog.i(TAG, "Check result: ${describe(found)}")
             mutableState.value = when (found) {
@@ -110,7 +110,7 @@ object UpdateManager {
             }
             val file = result.getOrElse { error ->
                 AppLog.e(TAG, "The download failed", error)
-                mutableState.value = UpdateState.Failed(error.message ?: "The download failed.")
+                mutableState.value = UpdateState.Failed(error.message ?: "Download failed.")
                 return@launch
             }
             AppLog.i(TAG, "Downloaded and checked ${file.name}")
@@ -131,7 +131,7 @@ object UpdateManager {
         mutableState.value = from.copy(handedOver = true, note = INSTALLING_NOTE)
         scope.launch(dispatcher) {
             ApkInstaller.install(app, from.file).onFailure { error ->
-                onInstallFailed("Android would not start the install: ${error.message}")
+                onInstallFailed("Install did not start: ${error.message}")
             }
         }
     }
@@ -178,8 +178,7 @@ object UpdateManager {
     // shows the other launcher. It stays in front until the Home key is
     // pressed. Seen on the emulator, where this app was the home app.
     private const val INSTALLING_NOTE =
-        "Android is installing it. This app closes for a moment. " +
-            "If the old home screen shows after that, press the Home key."
+        "Installing. If the old home screen shows, press Home."
 
     /** For tests. */
     internal fun reset() = force(UpdateState.Idle)

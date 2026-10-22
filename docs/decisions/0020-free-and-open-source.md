@@ -15,8 +15,8 @@ parts of `PROGRESS.md`. It is history now.
 ## What follows from it
 
 - The Ko-fi link is in three places and nowhere else: the README, the
-  GitHub "Sponsor" button through `.github/FUNDING.yml`, and Settings, Help,
-  "Support this app". The row opens the page in the browser of the tablet.
+  GitHub "Sponsor" button through `.github/FUNDING.yml`, and Settings, About,
+  "Support This App". The row opens the page in the browser of the tablet.
   The app itself still goes online in one place only, `core/update/`: handing
   an address to the browser is not the app going online.
 - No asking. The app never shows a "please pay" message, never counts

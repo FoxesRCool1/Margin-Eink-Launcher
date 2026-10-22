@@ -150,7 +150,7 @@ one, please open an issue and say how it went.
 ## Help, bugs and changes
 
 Open an [issue](https://github.com/FoxesRCool1/Margin-Eink-Launcher/issues).
-Attach the log: Settings, Help, Log, then the download icon. The log files go
+Attach the log: Settings, About, Log, then the download icon. The log files go
 to the `Download/Margin` folder.
 
 Changes are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) says how to build
@@ -160,7 +160,7 @@ the app and send a change.
 
 The app is free, and it stays free. If it helps you and you want to help pay
 for the work, there is a Ko-fi page: https://ko-fi.com/foxesrcool. The app
-never asks. The same link is in Settings, Help, "Support this app".
+never asks. The same link is in Settings, About, "Support This App".
 
 ## Credits
 

@@ -1,14 +1,22 @@
 package io.github.foxesrcool1.margin.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
+import io.github.foxesrcool1.margin.design.EinkDimens
+import io.github.foxesrcool1.margin.design.EinkShapes
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.EinkIcon
@@ -16,75 +24,66 @@ import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.PagedList
-import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.design.icons.LucideIcon
 
 /**
- * One row of Settings: what it is called, what it does, and what a tap does.
+ * One row of Settings: what it is called and what a tap does. No help line:
+ * a name that needs one is the wrong name.
  *
- * [help] is the help text. It is one or two short lines in plain words, and
- * every row has one. [value] is what the setting is set to now, for a setting
- * with more than two states. [trailing] is the icon at the end of the row: an
- * arrow for a row that leads somewhere, a switch for on and off, nothing for a
- * row that just does its job when pressed.
+ * [value] is what the setting is set to now, for a setting with more than two
+ * states. [on] makes the row a switch. [trailing] is the icon at the end of
+ * the row: an arrow for a row that opens something, nothing for a row that
+ * just does its job when pressed.
  */
 class Setting(
     val title: String,
-    val help: String,
     val icon: LucideIcon? = null,
     val enabled: Boolean = true,
     val value: String? = null,
-    val trailing: LucideIcon? = Lucide.ChevronRight,
+    val on: Boolean? = null,
+    val trailing: LucideIcon? = null,
     val onClick: () -> Unit,
 ) {
     companion object {
         /** A row that is on or off. The switch at its end shows which. */
         fun switch(
             title: String,
-            help: String,
             on: Boolean,
             onChange: (Boolean) -> Unit,
             icon: LucideIcon? = null,
             enabled: Boolean = true,
         ) = Setting(
             title = title,
-            help = help,
             icon = icon,
             enabled = enabled,
-            value = if (on) "On" else "Off",
-            trailing = if (on) Lucide.ToggleRight else Lucide.ToggleLeft,
+            on = on,
             onClick = { onChange(!on) },
         )
     }
 }
 
 /**
- * A title, the lines of help, the padding of the row and the rule under it,
- * and a few dp to spare. Text that is even one pixel too tall for its row
- * loses its last line, so the row is never cut to the exact sum.
+ * The line of the title, the padding of the row and the rule under it, and a
+ * few dp to spare. Text that is even one pixel too tall for its row loses its
+ * last line, so the row is never cut to the exact sum.
  */
-private fun settingRowHeight(helpLines: Int) = (54 + 22 * helpLines).dp
+private val SettingRowHeight = 60.dp
 
-/**
- * One page of settings. It works out by itself how many rows fit.
- *
- * [helpLines] is 2 for a page of settings, and 1 for the menu, where six short
- * rows on one page are worth more than six long ones on two.
- */
+/** One page of settings. It works out by itself how many rows fit. */
 @Composable
-fun SettingsList(rows: List<Setting>, modifier: Modifier = Modifier, helpLines: Int = 2) {
+fun SettingsList(rows: List<Setting>, modifier: Modifier = Modifier) {
     PagedList(
         items = rows,
-        pageSize = 4,
-        rowHeight = settingRowHeight(helpLines),
+        pageSize = 5,
+        rowHeight = SettingRowHeight,
         modifier = modifier,
     ) { _, row ->
-        SettingRow(row, helpLines)
+        SettingRow(row)
     }
 }
 
 @Composable
-private fun SettingRow(row: Setting, helpLines: Int) {
+private fun SettingRow(row: Setting) {
     EinkRow(onClick = { if (row.enabled) row.onClick() }) { pressed ->
         val strong = when {
             pressed && row.enabled -> EinkColors.Paper
@@ -97,16 +96,38 @@ private fun SettingRow(row: Setting, helpLines: Int) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (row.icon != null) EinkIcon(icon = row.icon, color = strong)
-            Column(modifier = Modifier.weight(1f)) {
-                EinkText(text = row.title, style = EinkType.rowTitle.copy(color = strong), maxLines = 1)
-                EinkText(text = row.help, style = EinkType.help.copy(color = strong), maxLines = helpLines)
-            }
+            EinkText(
+                text = row.title,
+                style = EinkType.rowTitle.copy(color = strong),
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
             if (row.value != null) CapsLabel(text = row.value, style = EinkType.capsSmall.copy(color = strong))
-            if (row.trailing != null) {
-                val isSwitch = row.trailing === Lucide.ToggleRight || row.trailing === Lucide.ToggleLeft
-                EinkIcon(icon = row.trailing, size = if (isSwitch) 34.dp else 22.dp, color = strong)
+            if (row.on != null) {
+                SwitchMark(on = row.on, color = strong, knob = if (pressed && row.enabled) EinkColors.Ink else EinkColors.Paper)
             }
+            if (row.trailing != null) EinkIcon(icon = row.trailing, size = 22.dp, color = strong)
         }
     }
     HairlineDivider(color = EinkColors.Faded)
+}
+
+/**
+ * A switch: a black pill with the knob on the right is on, an outline with
+ * the knob on the left is off. [knob] is the colour behind the row, so the
+ * knob of a pill that is on shows up as a hole.
+ */
+@Composable
+private fun SwitchMark(on: Boolean, color: Color, knob: Color) {
+    Box(
+        modifier = Modifier
+            .size(width = 48.dp, height = 28.dp)
+            .clip(EinkShapes.control)
+            .background(if (on) color else Color.Transparent)
+            .border(width = EinkDimens.rule, color = color, shape = EinkShapes.control)
+            .padding(5.dp),
+        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(modifier = Modifier.size(14.dp).clip(EinkShapes.control).background(if (on) knob else color))
+    }
 }

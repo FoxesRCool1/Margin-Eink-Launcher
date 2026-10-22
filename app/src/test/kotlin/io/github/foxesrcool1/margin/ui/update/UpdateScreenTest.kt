@@ -62,7 +62,7 @@ class UpdateStringsTest {
         )
         states.forEach { assertTrue(UpdateStrings.headline(it).isNotBlank()) }
         assertEquals("No connection to GitHub.", UpdateStrings.detail(UpdateState.Failed("No connection to GitHub.")))
-        assertTrue(UpdateStrings.headline(UpdateState.Downloading(release, asset, 40)).contains("40 percent"))
+        assertTrue(UpdateStrings.headline(UpdateState.Downloading(release, asset, 40)).contains("40%"))
     }
 }
 
@@ -107,7 +107,7 @@ class UpdateScreenshotTest {
     @Test
     fun privateRepositoryAndNoPermission() = shoot(
         UpdateState.Failed(
-            "GitHub cannot find the repository. If it is private, this app needs an access token.",
+            "Repository not found. If it is private, add a token.",
             tokenProblem = true,
         ),
         "update_needs_token",
@@ -120,8 +120,7 @@ class UpdateScreenshotTest {
             release,
             File("x.apk"),
             handedOver = true,
-            note = "The update does not fit over this app. It may be signed with a different key. " +
-                "(INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match)",
+            note = "Signed with a different key. (INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match)",
         ),
         "update_install_failed",
     )

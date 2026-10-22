@@ -21,22 +21,21 @@ import java.time.LocalDate
 private const val TAG = "StorageSection"
 
 /**
- * What the "Backup and files" page of Settings can do. The page itself is
- * rows like every other page, so this holds no layout, only the work.
+ * What the Files tab of Settings can do. The tab itself is rows like every
+ * other tab, so this holds no layout, only the work.
  */
 class StorageActions(
     val folderPath: String,
     val busy: Boolean,
     val backUp: () -> Unit,
     val restore: () -> Unit,
-    val rebuildIndex: () -> Unit,
     /** Not null while the app waits for a yes to a restore. Call it for the yes. */
     val confirmRestore: (() -> Unit)?,
     val cancelRestore: () -> Unit,
 )
 
 /**
- * Backup, restore, and a rebuild of the index.
+ * Backup and restore.
  *
  * A restore overwrites what is on the tablet, so it asks first. Both jobs run
  * off the main thread: a backup with a few books in it is not quick.
@@ -54,11 +53,11 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
         contract = ActivityResultContracts.CreateDocument("application/zip"),
     ) { uri ->
         if (uri == null) {
-            onStatus("Backup cancelled")
+            onStatus("Cancelled")
             return@rememberLauncherForActivityResult
         }
         busy = true
-        onStatus("Writing the backup")
+        onStatus("Saving the backup")
         scope.launch {
             onStatus(withContext(AppDispatchers.io) { writeBackup(context, uri) })
             busy = false
@@ -68,7 +67,7 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
     val restorePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        if (uri == null) onStatus("Restore cancelled") else pendingRestore = uri
+        if (uri == null) onStatus("Cancelled") else pendingRestore = uri
     }
 
     val restoreUri = pendingRestore
@@ -80,25 +79,15 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
             runCatching { backupPicker.launch(name) }
                 .onFailure {
                     AppLog.e(TAG, "No app could take the backup file", it)
-                    onStatus("This tablet has no file picker for saving")
+                    onStatus("No file picker found")
                 }
         },
         restore = {
             runCatching { restorePicker.launch(arrayOf("application/zip")) }
                 .onFailure {
                     AppLog.e(TAG, "No app could open a file", it)
-                    onStatus("This tablet has no file picker for opening")
+                    onStatus("No file picker found")
                 }
-        },
-        rebuildIndex = {
-            busy = true
-            onStatus("Reading the data folder")
-            scope.launch {
-                val snapshot = withContext(AppDispatchers.io) { repository.buildIndex() }
-                AppLog.i(TAG, "Index rebuilt with ${snapshot.entries.size} entries")
-                onStatus("Found ${snapshot.entries.size} files")
-                busy = false
-            }
         },
         confirmRestore = if (restoreUri == null) {
             null
@@ -106,7 +95,7 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
             {
                 pendingRestore = null
                 busy = true
-                onStatus("Reading the backup")
+                onStatus("Restoring")
                 scope.launch {
                     onStatus(withContext(AppDispatchers.io) { readBackup(context, restoreUri) })
                     busy = false
@@ -115,7 +104,7 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
         },
         cancelRestore = {
             pendingRestore = null
-            onStatus("Restore cancelled")
+            onStatus("Cancelled")
         },
     )
 }
@@ -124,10 +113,10 @@ private fun writeBackup(context: Context, uri: Uri): String {
     val repository = DataRoot.repository(context)
     return runCatching {
         val stream = context.contentResolver.openOutputStream(uri)
-            ?: return "The file could not be opened for writing"
+            ?: return "Could not open the file"
         stream.use { output ->
             val result = repository.backupTo(output)
-            "Backed up ${result.fileCount} files"
+            "Backup saved"
         }
     }.getOrElse { error ->
         AppLog.e(TAG, "Backup failed", error)
@@ -139,13 +128,13 @@ private fun readBackup(context: Context, uri: Uri): String {
     val repository = DataRoot.repository(context)
     return runCatching {
         val stream = context.contentResolver.openInputStream(uri)
-            ?: return "The file could not be opened for reading"
+            ?: return "Could not open the file"
         stream.use { input ->
             val result = repository.restoreFrom(input)
             if (result.refused.isEmpty()) {
                 "Restored ${result.fileCount} files"
             } else {
-                "Restored ${result.fileCount} files. ${result.refused.size} were refused."
+                "Restored ${result.fileCount} files, ${result.refused.size} refused"
             }
         }
     }.getOrElse { error ->
