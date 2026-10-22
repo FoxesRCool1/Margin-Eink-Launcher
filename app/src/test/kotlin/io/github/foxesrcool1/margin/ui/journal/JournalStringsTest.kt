@@ -84,4 +84,31 @@ class JournalStringsTest {
             JournalStrings.monthGrid(LocalDate.of(2026, 9, 30)),
         )
     }
+
+    @Test
+    fun `stepping a short month and back keeps the anchor day`() {
+        val back = JournalStrings.stepMonth(LocalDate.of(2026, 3, 31), 31, -1)
+        assertEquals(LocalDate.of(2026, 2, 28), back)
+        assertEquals(LocalDate.of(2026, 3, 31), JournalStrings.stepMonth(back, 31, 1))
+    }
+
+    @Test
+    fun `stepping months keeps the anchor day`() {
+        assertEquals(
+            LocalDate.of(2026, 10, 15),
+            JournalStrings.stepMonth(LocalDate.of(2026, 9, 15), 15, 1),
+        )
+        assertEquals(
+            LocalDate.of(2025, 12, 15),
+            JournalStrings.stepMonth(LocalDate.of(2026, 9, 15), 15, -9),
+        )
+    }
+
+    @Test
+    fun `stepping into a leap February clamps to the 29th`() {
+        assertEquals(
+            LocalDate.of(2024, 2, 29),
+            JournalStrings.stepMonth(LocalDate.of(2024, 1, 30), 30, 1),
+        )
+    }
 }

@@ -158,6 +158,7 @@ app/src/main/kotlin/io/github/foxesrcool1/margin/
   core/eink/     EinkDevice, the ViWoods layer by reflection, the crash guard
   core/ink/      strokes, file formats, undo, eraser geometry. No Android.
   core/reading/  annotations, reading log and timer. No Readium.
+  core/journal/  saving a journal entry, the daily word goal. No Android.
   core/pdf/      screens of a page, margin search, ink sidecar files
   core/update/   the in-app update from GitHub Releases. The only network code.
   core/speed/    time budgets and StrictMode, written to the log

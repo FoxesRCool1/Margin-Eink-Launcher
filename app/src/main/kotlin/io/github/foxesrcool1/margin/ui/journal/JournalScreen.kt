@@ -1,7 +1,9 @@
 package io.github.foxesrcool1.margin.ui.journal
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.foxesrcool1.margin.core.ink.PageTemplate
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.ui.ink.InkNoteActivity
@@ -28,7 +31,11 @@ import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitSummary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
+import io.github.foxesrcool1.margin.core.journal.JournalGoal
+import io.github.foxesrcool1.margin.core.journal.saveJournalEntry
 import io.github.foxesrcool1.margin.core.log.AppLog
+import io.github.foxesrcool1.margin.core.notes.NoteText
+import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
@@ -42,6 +49,7 @@ import io.github.foxesrcool1.margin.design.components.DialogOption
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.IconPressButton
+import io.github.foxesrcool1.margin.design.components.InvertPressButton
 import io.github.foxesrcool1.margin.design.components.Plants
 import io.github.foxesrcool1.margin.design.components.einkFieldBorder
 import io.github.foxesrcool1.margin.design.icons.Lucide
@@ -50,6 +58,7 @@ import io.github.foxesrcool1.margin.design.components.OptionsDialog
 import io.github.foxesrcool1.margin.design.components.PagedList
 import io.github.foxesrcool1.margin.design.components.TextPromptDialog
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -58,6 +67,9 @@ import java.time.ZoneId
 
 private const val TAG = "JournalScreen"
 private const val HABITS_PER_PAGE = 3
+
+/** The word count waits for the typing to pause, like the one in the note editor. */
+private const val COUNT_QUIET_MILLIS = 400L
 
 private enum class JournalMode { Day, Month, Routine }
 
@@ -81,6 +93,8 @@ fun JournalScreen(
     val opener = rememberPageOpener()
     val habits = remember(data) { HabitsRepository(data) }
     val routine = remember(data) { RoutineRepository(data) }
+    val settings = remember(context) { SettingsStore(context) }
+    val goal by settings.journalGoal.collectAsStateWithLifecycle(initialValue = 0)
 
     var boundaryHour by remember { mutableIntStateOf(DayBoundary.DEFAULT_HOUR) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -88,25 +102,40 @@ fun JournalScreen(
     // Worked out again each time the screen comes back and after each change.
     // A tablet that is left on this screen overnight wakes up on it in the
     // morning, and with a date worked out only once, the first ticks of the
-    // new day went onto yesterday.
-    val today = fixedToday
-        ?: remember(boundaryHour, refresh) {
-            DayBoundary(boundaryHour).dateOf(Instant.now(), ZoneId.systemDefault())
-        }
+    // new day went onto yesterday. A tap works it out once more, at the moment
+    // of the tap: the screen may have been awake across the day boundary.
+    fun dateNow(): LocalDate =
+        fixedToday ?: DayBoundary(boundaryHour).dateOf(Instant.now(), ZoneId.systemDefault())
+    val today = fixedToday ?: remember(boundaryHour, refresh) { dateNow() }
 
     var mode by remember { mutableStateOf(JournalMode.Day) }
     var viewDate by remember { mutableStateOf(today) }
     var shownToday by remember { mutableStateOf(today) }
+    // The day of the month the user chose. Month stepping clamps to short
+    // months, and this brings the 31st back after a February.
+    var anchorDay by remember { mutableIntStateOf(today.dayOfMonth) }
 
     var entryText by remember { mutableStateOf("") }
     var savedText by remember { mutableStateOf("") }
+    // The day the two texts above belong to. The day on show changes first and
+    // the entry of the new day arrives a moment later; a save in between must
+    // not write the old text into the new day.
+    var textDate by remember { mutableStateOf(today) }
     var editing by remember { mutableStateOf(false) }
+    // The text when the edit began, for Cancel. A pause saves the edit on the
+    // way, so Cancel cannot just forget it.
+    var editStartText by remember { mutableStateOf("") }
+    var saveProblem by remember { mutableStateOf(false) }
+    var words by remember { mutableIntStateOf(0) }
 
     // A new day has started. The view follows it if it was on "today", and if
     // nothing is being written: an open edit stays on the day it belongs to.
     LaunchedEffect(today) {
         if (today != shownToday) {
-            if (!editing && viewDate == shownToday) viewDate = today
+            if (!editing && viewDate == shownToday) {
+                viewDate = today
+                anchorDay = today.dayOfMonth
+            }
             shownToday = today
         }
     }
@@ -129,15 +158,16 @@ fun JournalScreen(
     var renaming by remember { mutableStateOf<HabitSummary?>(null) }
 
     LaunchedEffect(viewDate, refresh) {
+        val date = viewDate
         val loaded = withContext(AppDispatchers.io) {
             val document = habits.load()
             LoadedDay(
-                entry = data.journalEntry(viewDate).orEmpty(),
+                entry = data.journalEntry(date).orEmpty(),
                 summaries = habits.summaries(today),
-                monthDays = data.journalDatesIn(viewDate.year).toSet(),
+                monthDays = data.journalDatesIn(date.year).toSet(),
                 boundaryHour = document.dayBoundaryHour,
                 routine = routine.statuses(today),
-            ) to data.hasInkJournalEntry(viewDate)
+            ) to data.hasInkJournalEntry(date)
         }.let { (day, ink) ->
             hasInkEntry = ink
             day
@@ -151,10 +181,20 @@ fun JournalScreen(
         }
         entryText = loaded.entry
         savedText = loaded.entry
+        textDate = date
         summaries = loaded.summaries
         daysWithEntries = loaded.monthDays
         boundaryHour = loaded.boundaryHour
         routineRows = loaded.routine
+    }
+
+    // The word count waits for the typing to pause, and the next key cancels
+    // the wait. At rest it is worked out at once. Either way it runs off the
+    // main thread, so a long entry never holds up a key.
+    LaunchedEffect(entryText, editing) {
+        if (editing) delay(COUNT_QUIET_MILLIS)
+        val now = entryText
+        words = withContext(AppDispatchers.io) { NoteText.wordCount(now) }
     }
 
     // Two saves of one day can cross on the background threads, and the
@@ -163,37 +203,54 @@ fun JournalScreen(
     val newestText = remember { mutableMapOf<String, String>() }
     val writeLock = remember { Any() }
     fun writeNewest(date: java.time.LocalDate, text: String): Boolean = synchronized(writeLock) {
-        data.writeJournalEntry(date, newestText[date.toString()] ?: text)
+        data.saveJournalEntry(date, newestText[date.toString()] ?: text)
     }
 
-    fun saveEntry() {
-        // Both taken now. The day on show can change before the write runs,
-        // and the text belongs to the day it was written for.
+    /**
+     * Writes the text on show to the day it belongs to, and then runs
+     * [onSaved]. A write that fails runs nothing, reloads nothing and leaves
+     * the edit open with the words in it: the reload would put the old file
+     * over them.
+     */
+    fun saveEntry(onSaved: () -> Unit = {}) {
+        // Both taken now. The text belongs to the day it was written for.
         val text = entryText
-        val date = viewDate
+        val date = textDate
         newestText[date.toString()] = text
         scope.launch {
             val written = withContext(AppDispatchers.io) { writeNewest(date, text) }
             if (written) {
-                if (date == viewDate) savedText = text
+                if (date == textDate) {
+                    savedText = text
+                    saveProblem = false
+                }
                 AppLog.i(TAG, "Saved the entry for $date")
+                onSaved()
+                refresh++
             } else {
                 AppLog.e(TAG, "Could not save the entry for $date")
+                if (date == textDate) saveProblem = true
             }
-            refresh++
         }
     }
 
     /**
-     * Ends an edit by saving it. Every control that shows another day or
-     * another view calls this first. Without it, Previous and Next moved the
-     * day under an open edit, and Save then wrote today's text over the entry
-     * of another day.
+     * Ends an edit by saving it, and then runs [then]. Every control that
+     * shows another day or another view goes through this. Without it,
+     * Previous and Next moved the day under an open edit, and Save then wrote
+     * today's text over the entry of another day. When the save fails the edit
+     * stays open on its own day and [then] does not run.
      */
-    fun commitEdit() {
-        if (!editing) return
-        if (entryText != savedText) saveEntry()
-        editing = false
+    fun commitEdit(then: () -> Unit) {
+        if (editing && entryText != savedText) {
+            saveEntry {
+                editing = false
+                then()
+            }
+        } else {
+            editing = false
+            then()
+        }
     }
 
     // The Home key, Back and "Today" all take this screen away with no
@@ -205,7 +262,7 @@ fun JournalScreen(
     // write that keeps the words.
     fun saveOnTheWayOut(reason: String) {
         if (entryText == savedText) return
-        val date = viewDate
+        val date = textDate
         val text = entryText
         newestText[date.toString()] = text
         runCatching { writeNewest(date, text) }
@@ -238,9 +295,13 @@ fun JournalScreen(
         }.onFailure { AppLog.e(TAG, "Could not open the handwritten entry", it) }
     }
 
-    fun step(by: Long) {
-        commitEdit()
-        viewDate = if (mode == JournalMode.Day) viewDate.plusDays(by) else viewDate.plusMonths(by)
+    fun step(by: Long) = commitEdit {
+        if (mode == JournalMode.Day) {
+            viewDate = viewDate.plusDays(by)
+            anchorDay = viewDate.dayOfMonth
+        } else {
+            viewDate = JournalStrings.stepMonth(viewDate, anchorDay, by)
+        }
     }
 
     ScreenScaffold(
@@ -277,8 +338,9 @@ fun JournalScreen(
                     label = "Month",
                     selected = mode == JournalMode.Month,
                     onClick = {
-                        commitEdit()
-                        mode = if (mode == JournalMode.Day) JournalMode.Month else JournalMode.Day
+                        commitEdit {
+                            mode = if (mode == JournalMode.Day) JournalMode.Month else JournalMode.Day
+                        }
                     },
                 )
                 IconPressButton(
@@ -304,9 +366,10 @@ fun JournalScreen(
                     isFirst = index == 0,
                     isLast = index == routineRows.size - 1,
                     onToggle = {
+                        val day = dateNow()
                         scope.launch {
                             withContext(AppDispatchers.io) {
-                                routine.toggle(status.item.id, today)
+                                routine.toggle(status.item.id, day)
                             }
                             refresh++
                         }
@@ -328,6 +391,7 @@ fun JournalScreen(
                 selected = viewDate,
                 onSelectDay = { day ->
                     viewDate = day
+                    anchorDay = day.dayOfMonth
                     mode = JournalMode.Day
                 },
                 modifier = Modifier.weight(1f),
@@ -340,15 +404,26 @@ fun JournalScreen(
                         savedText = savedText,
                         editing = editing,
                         hasInkEntry = hasInkEntry,
+                        words = words,
+                        goal = goal,
+                        saveProblem = saveProblem,
                         onText = { entryText = it },
-                        onEdit = { editing = true },
-                        onSave = {
-                            saveEntry()
-                            editing = false
+                        onEdit = {
+                            editStartText = savedText
+                            saveProblem = false
+                            editing = true
                         },
+                        onSave = { saveEntry { editing = false } },
                         onCancel = {
-                            entryText = savedText
-                            editing = false
+                            val original = editStartText
+                            entryText = original
+                            saveProblem = false
+                            // A pause may have saved the edit already. Then the
+                            // text from before the edit has to be written back.
+                            if (savedText != original) saveEntry { editing = false } else editing = false
+                        },
+                        onGoal = {
+                            scope.launch { settings.setJournalGoal(JournalGoal.next(goal)) }
                         },
                         onHandwrite = { openHandwriting() },
                         modifier = entryModifier,
@@ -362,10 +437,7 @@ fun JournalScreen(
                             IconPressButton(
                                 icon = Lucide.ListChecks,
                                 label = "Routine",
-                                onClick = {
-                                    commitEdit()
-                                    mode = JournalMode.Routine
-                                },
+                                onClick = { commitEdit { mode = JournalMode.Routine } },
                             )
                         }
                         HairlineDivider(color = EinkColors.Faded)
@@ -379,9 +451,10 @@ fun JournalScreen(
                             HabitRow(
                                 summary = summary,
                                 onToggle = {
+                                    val day = dateNow()
                                     scope.launch {
                                         withContext(AppDispatchers.io) {
-                                            habits.toggle(summary.habit.id, today)
+                                            habits.toggle(summary.habit.id, day)
                                         }
                                         refresh++
                                     }
@@ -544,6 +617,10 @@ private val RoutineRowHeight = 96.dp
  * At rest it is the first lines of the entry with two icons beside them: one
  * to type, one to write by hand. While it is being typed it is a text box with
  * a tick to save and a cross to give up.
+ *
+ * The label row also holds the word count, "212 / 750" against the daily goal.
+ * Pressing it moves to the next goal. A day that has reached the goal gets a
+ * check in front of the count, and nothing else.
  */
 @Composable
 private fun DayEntry(
@@ -551,31 +628,57 @@ private fun DayEntry(
     savedText: String,
     editing: Boolean,
     hasInkEntry: Boolean,
+    words: Int,
+    goal: Int,
+    saveProblem: Boolean,
     onText: (String) -> Unit,
     onEdit: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    onGoal: () -> Unit,
     onHandwrite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CapsLabel(text = "Entry", style = EinkType.capsSmall, modifier = Modifier.weight(1f))
-            if (editing) {
-                IconPressButton(icon = Lucide.X, label = "Cancel", onClick = onCancel)
-                IconPressButton(icon = Lucide.Check, label = "Save", bordered = true, onClick = onSave)
-            } else {
-                IconPressButton(
-                    icon = Lucide.Keyboard,
-                    label = if (savedText.isBlank()) "Type an entry" else "Edit the entry",
-                    onClick = onEdit,
-                )
-                IconPressButton(
-                    icon = Lucide.Signature,
-                    label = if (hasInkEntry) "Open the handwritten entry" else "Write by hand",
-                    selected = hasInkEntry,
-                    onClick = onHandwrite,
-                )
+        // The count sits in the label row. There is no room for a row of its
+        // own under the entry: upright it pushed a habit off the page, and in
+        // half of a split screen the page was already full. The row is 56 dp
+        // tall, so the count is a target big enough to press. In a narrow
+        // column the word "Entry" gives way to the count, and in the narrowest
+        // the count gets small. The icons on the right always keep their room.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val roomy = maxWidth >= 300.dp
+            val tight = maxWidth < 240.dp
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    if (roomy) CapsLabel(text = "Entry", style = EinkType.capsSmall)
+                    InvertPressButton(
+                        text = JournalGoal.shortCountText(words, goal),
+                        onClick = onGoal,
+                        bordered = false,
+                        compact = true,
+                        icon = if (JournalGoal.reached(words, goal)) Lucide.Check else null,
+                        iconSize = if (tight) 16.dp else 20.dp,
+                        iconGap = if (tight) 4.dp else 10.dp,
+                        contentPadding = PaddingValues(horizontal = if (tight) 4.dp else 8.dp, vertical = 8.dp),
+                    )
+                }
+                if (editing) {
+                    IconPressButton(icon = Lucide.X, label = "Cancel", onClick = onCancel)
+                    IconPressButton(icon = Lucide.Check, label = "Save", bordered = true, onClick = onSave)
+                } else {
+                    IconPressButton(
+                        icon = Lucide.Keyboard,
+                        label = if (savedText.isBlank()) "Type an entry" else "Edit the entry",
+                        onClick = onEdit,
+                    )
+                    IconPressButton(
+                        icon = Lucide.Signature,
+                        label = if (hasInkEntry) "Open the handwritten entry" else "Write by hand",
+                        selected = hasInkEntry,
+                        onClick = onHandwrite,
+                    )
+                }
             }
         }
         HairlineDivider(color = EinkColors.Faded)
@@ -601,6 +704,10 @@ private fun DayEntry(
                 maxLines = 3,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             )
+        }
+        if (saveProblem) {
+            Spacer(modifier = Modifier.height(6.dp))
+            CapsLabel(text = "Could not save", style = EinkType.capsSmall)
         }
     }
 }

@@ -4,6 +4,38 @@ One section per step. Newest step at the top.
 
 ---
 
+## Journal: a daily word goal, and eight fixes
+
+Date: 2026-10-22. Branch `Dev`. Decision 0025.
+
+### What was done
+
+1. **A daily word goal.** Off, 250, 500, 750 or 1000 words. The entry shows
+   "212 / 750" in its label row, upright, on its side and in a split half.
+   Press it to change the goal. A day that has reached the goal gets a check.
+2. **A failed save keeps the words.** The editor stays open and says "Could
+   not save". Moving to another day waits for the save.
+3. **An unsaved edit cannot land on the next day.** The text carries its date.
+4. **Cancel works after a pause**, and an emptied entry removes the day's file
+   so the month view does not mark it.
+5. **Ticks use the date of the tap**, so a tablet left on across the day
+   boundary ticks the right day.
+6. **Month stepping keeps the day**: 31 Mar, back, forward is 31 Mar.
+7. **Routine**: a new item never takes the id of a removed one that still has
+   ticks. A list or tick file that cannot be read is no longer written over.
+8. **Month view numbers** are pure black and a size up. Today has a thin ring.
+
+### What the owner must test on the tablet
+
+- Type an entry with a goal set. The count follows the typing after a short
+  pause. Press the count to cycle Off, 250, 500, 750, 1000.
+- Reach the goal: a check appears before the count.
+- Type, press Home, come back, press Cancel: the old text is back.
+- Empty an entry and save: the day has no rule under it in the month view.
+- Month view: the numbers are black and readable. Today has a thin ring.
+
+---
+
 ## Home: a big clock, Continue, and parts of the day
 
 Date: 2026-10-22. Branch `Dev`. Decision 0024.

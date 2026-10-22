@@ -6,6 +6,7 @@ import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
+import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -35,11 +36,27 @@ class RoutineRepository(private val data: DataRepository) {
     private val listPath = "${StorageLayout.HABITS}/routine.json"
     private val logPath = "${StorageLayout.HABITS}/routine-log.csv"
 
-    fun load(): RoutineDocument {
-        val text = data.store.readText(listPath) ?: return RoutineDocument(emptyList())
+    fun load(): RoutineDocument = read() ?: RoutineDocument(emptyList())
+
+    /**
+     * The document, or null when the file is there and could not be read.
+     * A change must stop on null: writing the empty list that [load] shows
+     * would wipe every routine item the user has.
+     */
+    private fun read(): RoutineDocument? {
+        val text = try {
+            data.store.readTextOrThrow(listPath)
+        } catch (problem: IOException) {
+            AppLog.e(TAG, "routine.json could not be read. Nothing was changed.", problem)
+            return null
+        }
+        if (text == null) return RoutineDocument(emptyList())
+
         val parsed = RoutineFile.parse(text)
         if (parsed == null) {
             AppLog.w(TAG, "routine.json could not be read. Starting from an empty list.")
+            // The next "Add item" writes a new file over this one. Keep what
+            // the user had, typo and all.
             data.keepUnreadable(listPath, "${StorageLayout.HABITS}/routine.unreadable.json")
             return RoutineDocument(emptyList())
         }
@@ -50,8 +67,11 @@ class RoutineRepository(private val data: DataRepository) {
         data.store.writeText(listPath, RoutineFile.serialise(document))
 
     fun add(label: String, target: String = ""): RoutineDocument = synchronized(LOCK) {
-        val current = load()
-        val id = RoutineFile.idFor(label, current.items.map { it.id }.toSet())
+        val current = read() ?: return@synchronized load()
+        // A removed item leaves its ticks, and a new item with the same label
+        // must not pick them up.
+        val taken = current.items.map { it.id }.toSet() + readMarks().orEmpty().map { it.habitId }.toSet()
+        val id = RoutineFile.idFor(label, taken)
         val next = RoutineDocument(current.items + RoutineItem(id, label.trim(), target))
         save(next)
         AppLog.i(TAG, "Added routine item $id")
@@ -60,22 +80,37 @@ class RoutineRepository(private val data: DataRepository) {
 
     /** Sets the part of the day of one item. An id that is not there changes nothing. */
     fun setPart(id: String, part: PartOfDay): RoutineDocument = synchronized(LOCK) {
-        val current = load()
+        val current = read() ?: return@synchronized load()
         val next = RoutineDocument(current.items.map { if (it.id == id) it.copy(part = part) else it })
         if (next != current) save(next)
         next
     }
 
-    fun remove(id: String): RoutineDocument = synchronized(LOCK) { load().without(id).also { save(it) } }
+    fun remove(id: String): RoutineDocument = synchronized(LOCK) {
+        val current = read() ?: return@synchronized load()
+        current.without(id).also { save(it) }
+    }
 
-    fun move(id: String, by: Int): RoutineDocument = synchronized(LOCK) { load().move(id, by).also { save(it) } }
+    fun move(id: String, by: Int): RoutineDocument = synchronized(LOCK) {
+        val current = read() ?: return@synchronized load()
+        current.move(id, by).also { save(it) }
+    }
 
-    private fun marks(): List<HabitMark> =
-        data.store.readText(logPath)?.let { HabitLogFile.parse(it) } ?: emptyList()
+    /** The marks, or null when the log is there and could not be read. See [read]. */
+    private fun readMarks(): List<HabitMark>? {
+        val text = try {
+            data.store.readTextOrThrow(logPath)
+        } catch (problem: IOException) {
+            AppLog.e(TAG, "routine-log.csv could not be read. Nothing was changed.", problem)
+            return null
+        } ?: return emptyList()
+        return HabitLogFile.parse(text)
+    }
 
     /** Ticks an item off for [date], or takes the tick away. Returns the new state. */
     fun toggle(id: String, date: LocalDate): Boolean = synchronized(LOCK) {
-        val current = marks().toMutableList()
+        // Unreadable log: change nothing, and say the item is not done.
+        val current = (readMarks() ?: return@synchronized false).toMutableList()
         val mark = HabitMark(id, date)
 
         val nowDone = if (current.remove(mark)) {
@@ -90,7 +125,7 @@ class RoutineRepository(private val data: DataRepository) {
     }
 
     fun statuses(date: LocalDate): List<RoutineStatus> {
-        val done = marks().filter { it.date == date }.map { it.habitId }.toSet()
+        val done = readMarks().orEmpty().filter { it.date == date }.map { it.habitId }.toSet()
         return load().items.map { item -> RoutineStatus(item, done.contains(item.id)) }
     }
 

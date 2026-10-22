@@ -1,6 +1,7 @@
 package io.github.foxesrcool1.margin.ui.journal
 
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
@@ -57,5 +58,15 @@ object JournalStrings {
             while (size % 7 != 0) add(null)
         }
         return cells.chunked(7)
+    }
+
+    /**
+     * The day in the month [by] months away. It takes the day the user chose,
+     * [anchorDay], and not the day on show, so Mar 31 to February to March
+     * comes back to the 31st and not the 28th.
+     */
+    fun stepMonth(from: LocalDate, anchorDay: Int, by: Long): LocalDate {
+        val month = YearMonth.from(from).plusMonths(by)
+        return month.atDay(minOf(anchorDay, month.lengthOfMonth()))
     }
 }

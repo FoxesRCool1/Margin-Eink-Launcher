@@ -5,6 +5,7 @@ import io.github.foxesrcool1.margin.core.json.JsonArray
 import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
+import io.github.foxesrcool1.margin.core.storage.UnreadableStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -213,8 +214,53 @@ class RoutineTest {
         store.writeText("habits/routine.json", "not json at all")
 
         assertTrue(routine.load().items.isEmpty())
-        routine.add("Journal", "journal")
-        assertTrue(routine.statuses(today).single().doneToday)
+        assertTrue(store.readText("habits/routine-log.csv").orEmpty().contains("journal"))
+    }
+
+    @Test
+    fun `a removed item's ticks do not come back with a new item of the same name`() {
+        routine.add("Stretch")
+        routine.toggle("stretch", today)
+        routine.remove("stretch")
+        routine.add("Stretch")
+
+        assertEquals("stretch-2", routine.load().items.single().id)
+        assertFalse(routine.statuses(today).single().doneToday)
+    }
+
+    @Test
+    fun `an item that was never ticked gets its old id back`() {
+        routine.add("Stretch")
+        routine.remove("stretch")
+        routine.add("Stretch")
+
+        assertEquals("stretch", routine.load().items.single().id)
+    }
+
+    @Test
+    fun `a routine list that cannot be read is not written over`() {
+        routine.add("Journal")
+        val before = store.readText("habits/routine.json")
+
+        val blind = RoutineRepository(DataRepository(UnreadableStore(store, "habits/routine.json")))
+        blind.add("Read")
+        blind.remove("journal")
+        blind.move("journal", 1)
+        blind.setPart("journal", PartOfDay.Evening)
+
+        assertEquals(before, store.readText("habits/routine.json"))
+    }
+
+    @Test
+    fun `a tick log that cannot be read is not written over`() {
+        routine.add("Journal")
+        routine.toggle("journal", today)
+        val before = store.readText("habits/routine-log.csv")
+
+        val blind = RoutineRepository(DataRepository(UnreadableStore(store, "habits/routine-log.csv")))
+        blind.toggle("journal", today.minusDays(1))
+
+        assertEquals(before, store.readText("habits/routine-log.csv"))
     }
 
     // -- Part of the day ----------------------------------------------------

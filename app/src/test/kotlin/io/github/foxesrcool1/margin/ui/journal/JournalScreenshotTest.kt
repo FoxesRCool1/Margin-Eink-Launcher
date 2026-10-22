@@ -90,7 +90,8 @@ class JournalScreenshotTest {
                             LocalDate.of(2026, 9, 19),
                         ),
                         today = today,
-                        selected = today,
+                        // Today has the thin ring, the chosen day the thick one.
+                        selected = LocalDate.of(2026, 9, 9),
                         onSelectDay = {},
                     )
                 }

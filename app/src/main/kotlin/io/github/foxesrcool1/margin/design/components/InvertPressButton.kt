@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
@@ -51,6 +52,9 @@ fun InvertPressButton(
     compact: Boolean = false,
     /** Drawn in front of the word. */
     icon: LucideIcon? = null,
+    /** For a control in a very narrow place: a smaller icon, and less space after it. */
+    iconSize: Dp = 20.dp,
+    iconGap: Dp = 10.dp,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -81,10 +85,10 @@ fun InvertPressButton(
             )
             .einkClickable(enabled = enabled, interactionSource = interactionSource, onClick = onClick)
             .padding(contentPadding),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(iconGap, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) EinkIcon(icon = icon, size = 20.dp, color = foreground)
+        if (icon != null) EinkIcon(icon = icon, size = iconSize, color = foreground)
         EinkText(
             text = text.uppercase(Locale.ROOT),
             style = (if (compact) EinkType.buttonCompact else EinkType.button).copy(color = foreground),

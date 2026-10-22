@@ -402,6 +402,51 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         capture("journal_editing")
     }
 
+    /** Runs [block] with the journal word goal set, and puts it back to Off after. */
+    private fun withJournalGoal(goal: Int, block: () -> Unit) {
+        val store = SettingsStore(context)
+        runBlocking { store.setJournalGoal(goal) }
+        try {
+            block()
+        } finally {
+            runBlocking { store.setJournalGoal(0) }
+        }
+    }
+
+    /** An entry of about [words] words, longer than the three lines the day shows. */
+    private fun seedLongJournal(words: Int) {
+        seedJournal()
+        DataRoot.repository(context)
+            .writeJournalEntry(today, "A quiet morning by the window. ".repeat(words / 6 + 1))
+    }
+
+    /** A goal is set and the day is part way to it. */
+    @Test
+    fun journalDayWithAGoal() = withJournalGoal(750) {
+        seedJournal()
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("/ 750")
+        capture("journal_day_goal")
+    }
+
+    /** The goal is reached: a check in front of the count. */
+    @Test
+    fun journalGoalReached() = withJournalGoal(250) {
+        seedLongJournal(260)
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("/ 250")
+        capture("journal_goal_reached")
+    }
+
+    @Test
+    fun journalEditingWithAGoal() = withJournalGoal(750) {
+        seedJournal()
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("/ 750")
+        compose.onNodeWithContentDescription("Edit the entry").performClick()
+        capture("journal_editing_goal")
+    }
+
     private val someApps = listOf(
         "Calculator", "Calendar", "Camera", "Chrome", "Clock", "Contacts", "DevCheck", "Files", "Gallery", "Kindle",
         "KOReader", "Libby", "Maps", "Notes", "Play Store", "Pocket", "Recorder", "Syncthing", "ViWoods Settings",
@@ -731,6 +776,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         swapped: Boolean = false,
         mainPage: PanePage? = null,
         waitFor: String? = null,
+        act: () -> Unit = {},
         main: @Composable () -> Unit,
     ) {
         val split = SplitState(mainPage = { mainPage }).apply { open(page, swapped) }
@@ -740,6 +786,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
             }
         }
         waitFor?.let(::waitForText)
+        act()
         capture(name)
     }
 
@@ -770,6 +817,37 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         split(PanePage.Tab(LauncherRoute.Writing), "split_journal_writing", waitFor = "Garden plan") {
             JournalScreen(onBack = {}, fixedToday = today)
         }
+    }
+
+    /** The Journal in half of the screen (320 dp wide on its side), with a goal reached. */
+    @Test
+    fun splitJournalGoalReached() = withJournalGoal(250) {
+        seedLongJournal(260)
+        split(PanePage.Tab(LauncherRoute.Writing), "split_journal_goal", waitFor = "/ 250") {
+            JournalScreen(onBack = {}, fixedToday = today)
+        }
+    }
+
+    @Test
+    fun splitJournalEditingWithAGoal() = withJournalGoal(750) {
+        seedJournal()
+        split(
+            PanePage.Tab(LauncherRoute.Writing),
+            "split_journal_editing",
+            waitFor = "/ 750",
+            act = { compose.onNodeWithContentDescription("Edit the entry").performClick() },
+        ) { JournalScreen(onBack = {}, fixedToday = today) }
+    }
+
+    @Test
+    fun splitJournalMonth() {
+        seedJournal()
+        split(
+            PanePage.Tab(LauncherRoute.Writing),
+            "split_journal_month",
+            waitFor = "Read 30",
+            act = { compose.onNodeWithContentDescription("Month").performClick() },
+        ) { JournalScreen(onBack = {}, fixedToday = today) }
     }
 
     @Test

@@ -2,6 +2,7 @@ package io.github.foxesrcool1.margin.core.settings
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import io.github.foxesrcool1.margin.core.journal.JournalGoal
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -144,6 +145,15 @@ class SettingsStore(context: Context) {
         }
     }
 
+    /** Words to write in the journal each day. Zero is Off. */
+    val journalGoal: Flow<Int> = store.data.map { prefs ->
+        JournalGoal.clean(prefs[KEY_JOURNAL_GOAL] ?: 0)
+    }
+
+    suspend fun setJournalGoal(words: Int) {
+        store.edit { it[KEY_JOURNAL_GOAL] = JournalGoal.clean(words) }
+    }
+
     companion object {
         private val KEY_READER_FONT = stringPreferencesKey("reader_font")
         private val KEY_READER_SIZE = androidx.datastore.preferences.core.intPreferencesKey("reader_font_size")
@@ -153,6 +163,7 @@ class SettingsStore(context: Context) {
         private val KEY_READER_UNDERLINE = booleanPreferencesKey("reader_underline_highlights")
         private val KEY_READER_REFRESH = androidx.datastore.preferences.core.intPreferencesKey("reader_refresh_every")
         private val KEY_READER_GOAL = androidx.datastore.preferences.core.intPreferencesKey("reader_goal_minutes")
+        private val KEY_JOURNAL_GOAL = androidx.datastore.preferences.core.intPreferencesKey("journal_goal_words")
 
         const val FAST_PEN_OFF = "off"
         const val FAST_PEN_WRITING = "writing"

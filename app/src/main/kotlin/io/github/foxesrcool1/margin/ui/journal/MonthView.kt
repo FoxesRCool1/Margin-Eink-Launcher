@@ -30,9 +30,11 @@ import java.time.LocalDate
 /**
  * A month, as whole weeks starting on Monday.
  *
- * A day with an entry carries a rule under its number. There is no colour and
- * no fill, because a filled cell on e-ink is a large black block that ghosts.
- * The whole month fits on one screen, so there is nothing to scroll.
+ * A day with an entry carries a rule under its number. Every number is pure
+ * black: small grey text is hard to read on the panel. Today has a thin ring and
+ * the chosen day a thick one. There is no colour and no fill, because a filled
+ * cell on e-ink is a large black block that ghosts. The whole month fits on one
+ * screen, so there is nothing to scroll.
  */
 @Composable
 fun MonthView(
@@ -58,10 +60,7 @@ fun MonthView(
             JournalStrings.weekdayInitials().forEach { initial ->
                 CapsLabel(
                     text = initial,
-                    style = EinkType.capsSmall.copy(
-                        color = EinkColors.Faded,
-                        textAlign = TextAlign.Center,
-                    ),
+                    style = EinkType.capsSmall.copy(textAlign = TextAlign.Center),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -115,10 +114,11 @@ private fun DayCell(
         modifier = modifier
             .height(height)
             .then(
-                if (isSelected) {
-                    Modifier.border(EinkDimens.rule, EinkColors.Ink, EinkShapes.field)
-                } else {
-                    Modifier
+                when {
+                    isSelected -> Modifier.border(EinkDimens.rule, EinkColors.Ink, EinkShapes.field)
+                    // Today is told by a thin ring, not by grey on the other days.
+                    isToday -> Modifier.border(EinkDimens.hairline, EinkColors.Ink, EinkShapes.field)
+                    else -> Modifier
                 },
             )
             .einkClickable(onClick = onSelect)
@@ -128,10 +128,7 @@ private fun DayCell(
     ) {
         EinkText(
             text = day.dayOfMonth.toString(),
-            style = EinkType.body.copy(
-                color = if (isToday) EinkColors.Ink else EinkColors.Faded,
-                textAlign = TextAlign.Center,
-            ),
+            style = EinkType.rowTitle.copy(textAlign = TextAlign.Center),
             maxLines = 1,
         )
         Spacer(modifier = Modifier.height(4.dp))
