@@ -29,7 +29,8 @@ object JournalStrings {
     }
 
     fun streakLabel(currentStreak: Int): String = when (currentStreak) {
-        0 -> "No streak"
+        // The dots under the habit show the gap. Words for nothing are noise.
+        0 -> ""
         1 -> "1 day"
         else -> "$currentStreak days"
     }

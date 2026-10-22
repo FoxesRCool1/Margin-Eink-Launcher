@@ -30,7 +30,7 @@ class JournalStringsTest {
 
     @Test
     fun `a streak reads in plain words`() {
-        assertEquals("No streak", JournalStrings.streakLabel(0))
+        assertEquals("", JournalStrings.streakLabel(0))
         assertEquals("1 day", JournalStrings.streakLabel(1))
         assertEquals("12 days", JournalStrings.streakLabel(12))
     }

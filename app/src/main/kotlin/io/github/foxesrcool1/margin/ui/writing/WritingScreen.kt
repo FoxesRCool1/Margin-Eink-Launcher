@@ -28,7 +28,6 @@ import io.github.foxesrcool1.margin.ui.ink.InkExport
 import io.github.foxesrcool1.margin.core.notes.NoteEntry
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
-import io.github.foxesrcool1.margin.core.storage.RelativePaths
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
@@ -413,7 +412,6 @@ private fun NoteRow(
 ) {
     EinkRow(onClick = onOpen, onLongClick = onOptions) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
-        val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -434,17 +432,16 @@ private fun NoteRow(
                 style = EinkType.rowTitle.copy(color = foreground),
                 maxLines = 1,
             )
-            val second = when {
-                entry.isFolder -> "Folder"
-                entry.preview.isNotBlank() -> entry.preview
-                StorageLayout.isInkNote(entry.name) -> "Handwritten note"
-                else -> RelativePaths.extensionOf(entry.name).uppercase()
+            // The icon already says folder, typed or handwritten. The second
+            // line is only the start of the note, in the case it was written
+            // in: the user's own words in small capitals read as shouting.
+            if (!entry.isFolder && entry.preview.isNotBlank()) {
+                EinkText(
+                    text = entry.preview,
+                    style = EinkType.help.copy(color = foreground),
+                    maxLines = 1,
+                )
             }
-            CapsLabel(
-                text = second,
-                style = EinkType.capsSmall.copy(color = faded),
-                maxLines = 1,
-            )
         }
         }
     }

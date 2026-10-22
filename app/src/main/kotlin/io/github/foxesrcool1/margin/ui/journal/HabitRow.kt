@@ -60,10 +60,10 @@ fun HabitRow(
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            CapsLabel(
-                text = JournalStrings.streakLabel(summary.currentStreak),
-                style = EinkType.capsSmall.copy(color = faded),
-            )
+            val streak = JournalStrings.streakLabel(summary.currentStreak)
+            if (streak.isNotEmpty()) {
+                CapsLabel(text = streak, style = EinkType.capsSmall.copy(color = faded))
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
