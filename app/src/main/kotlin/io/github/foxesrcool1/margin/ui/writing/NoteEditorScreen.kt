@@ -165,6 +165,28 @@ fun rememberNoteEditor(
         save("autosave")
     }
 
+    // Another screen may have written this note while this one was stopped: the
+    // Writing tab, for a note that also stands beside a book. An editor with no
+    // typing in it takes the newer text. One with typing in it keeps it, and the
+    // typing is saved as it always was.
+    val resumes = remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumes.intValue++ }
+    LaunchedEffect(resumes.intValue) {
+        if (!loaded || text != savedText) return@LaunchedEffect
+        val before = text
+        val fresh = withContext(AppDispatchers.io) {
+            // A note that is gone is the saver's business (it saves beside), not a reason to empty the page.
+            if (notes.exists(current.get())) notes.readOrNull(current.get()) else null
+        } ?: return@LaunchedEffect
+        // Typing may have started while the file was read.
+        if (text == before && savedText == before && fresh != before) {
+            text = fresh
+            savedText = fresh
+            saver.loaded(fresh)
+            AppLog.i(TAG, "Read ${current.get()} again: it was changed elsewhere")
+        }
+    }
+
     // The word count and the title wait for the typing to pause, and the next
     // key cancels the wait. The first count, when the note opens, is at once.
     var words by remember(notePath) { mutableIntStateOf(0) }

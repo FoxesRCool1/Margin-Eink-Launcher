@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.ui.reading
 
+import android.os.Bundle
 import android.os.Looper
 import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
@@ -178,5 +179,37 @@ class EpubReaderSmokeTest {
         // Through the repository, not the folder: the repository is cached for
         // the life of the process, and an earlier test class may have made it.
         assertTrue(DataRoot.repository(context).store.exists("annotations/test-1.json"))
+    }
+
+    @Test
+    fun `a book that finishes opening after Home was pressed waits and does not crash`() {
+        val context = RuntimeEnvironment.getApplication()
+        writeEpub(File(DataRoot.folder(context), "books/test.epub"))
+
+        val controller = Robolectric.buildActivity(
+            EpubReaderActivity::class.java,
+            EpubReaderActivity.intent(context, "books/test.epub", "test-2", "A Test Book"),
+        ).setup()
+
+        // Home at once, while the book is still opening on its own thread. When
+        // the open ends, the fragment manager has saved its state and would
+        // refuse the commit of the book view.
+        controller.pause().stop().saveInstanceState(Bundle())
+        val manager = controller.get().supportFragmentManager
+        val quiet = System.currentTimeMillis() + 3_000
+        while (System.currentTimeMillis() < quiet) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(50)
+        }
+        assertEquals("the book view waits for the screen to come back", 0, manager.fragments.size)
+
+        controller.start().resume()
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline && manager.fragments.isEmpty()) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(50)
+        }
+        assertTrue("the book view was never added", manager.fragments.isNotEmpty())
+        controller.pause().stop().destroy()
     }
 }

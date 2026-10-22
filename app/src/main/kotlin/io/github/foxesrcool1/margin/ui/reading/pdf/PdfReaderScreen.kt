@@ -218,7 +218,7 @@ private fun InkPagesDialog(state: PdfUiState, actions: PdfActions) {
                 items = state.inkPages,
                 pageSize = 6,
                 rowHeight = EinkDimens.rowTwoLines,
-                emptyText = "No page of this PDF has handwriting on it yet",
+                emptyText = "No handwriting in this PDF yet",
                 modifier = Modifier.weight(1f),
             ) { _, page ->
                 EinkRow(onClick = { actions.goToPage(page.pageNumber) }) { pressed ->

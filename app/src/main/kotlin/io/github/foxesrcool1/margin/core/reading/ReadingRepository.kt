@@ -37,6 +37,16 @@ class ReadingRepository(private val data: DataRepository) {
     fun inkNotePath(bookId: String, highlightId: String): String =
         "${StorageLayout.ANNOTATIONS}/${StorageLayout.safeName(bookId)}/note-${StorageLayout.safeName(highlightId)}.${StorageLayout.INK_NOTE_EXTENSION}"
 
+    /**
+     * Deletes the handwritten card of a highlight that was removed. Only a card
+     * in the annotations folder: a path from a damaged file reaches nothing else.
+     */
+    fun deleteInkNote(path: String): Boolean {
+        val clean = runCatching { RelativePaths.normalise(path) }.getOrNull() ?: return false
+        if (!clean.startsWith("${StorageLayout.ANNOTATIONS}/") || !clean.endsWith(".${StorageLayout.INK_NOTE_EXTENSION}")) return false
+        return data.store.delete(clean)
+    }
+
     fun exportMarkdown(annotations: BookAnnotations): String? {
         val name = "${StorageLayout.safeName(annotations.title.ifBlank { "book" })} notes.md"
         val path = data.freePath(RelativePaths.join(StorageLayout.EXPORTS, name))

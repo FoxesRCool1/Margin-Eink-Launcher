@@ -175,7 +175,7 @@ class PdfReaderActivity : ComponentActivity() {
     private var request = 0
 
     private val timer = ReadingTimer()
-    private var today: LocalDate = LocalDate.now()
+    private var dayBoundaryHour = DayBoundary.DEFAULT_HOUR
     private var annotations = BookAnnotations()
     private val autosave = Runnable { saveInk() }
 
@@ -223,18 +223,17 @@ class PdfReaderActivity : ComponentActivity() {
         val loaded = reading.load(bookId)
         val hour = runCatching { HabitsRepository(DataRoot.repository(this)).load().dayBoundaryHour }
             .getOrDefault(DayBoundary.DEFAULT_HOUR)
-        val day = DayBoundary(hour).dateOf(Instant.now(), ZoneId.systemDefault())
 
         main.post {
             if (isDestroyed) {
                 opened?.close()
                 return@post
             }
-            today = day
+            dayBoundaryHour = hour
             if (opened == null || opened.pageCount == 0) {
                 opened?.close()
                 ui.loading = false
-                ui.failure = "This PDF could not be opened. It may need a password, or it may be damaged."
+                ui.failure = "This PDF is locked or damaged."
                 return@post
             }
             pages = opened
@@ -301,9 +300,11 @@ class PdfReaderActivity : ComponentActivity() {
                 if (took > 400) AppLog.i(TAG, "Page ${pageIndex + 1} screen ${screen + 1} took $took ms")
 
                 if (pageInk != null) {
+                    // Strokes drawn on the old page while this one rendered are still in the canvas. Save them before setPage replaces the editor.
+                    saveInk()
                     val strokes = (pageInk as? PageInkLoad.Loaded)?.strokes ?: emptyList()
                     inkWritable = pageInk is PageInkLoad.Loaded
-                    if (!inkWritable) ui.notice = "The handwriting on this page could not be read. It will not be changed."
+                    if (!inkWritable) ui.notice = "Old ink is unreadable. New ink is not saved."
                     view.unitScale = whole.width / InkNote.DEFAULT_PAGE_WIDTH
                     view.setPage(strokes, whole.width, whole.height, PageTemplate.Blank)
                     inkPage = pageIndex
@@ -350,6 +351,7 @@ class PdfReaderActivity : ComponentActivity() {
             }
             else -> return
         }
+        ui.notice = null
         turns++
         if (refreshEvery > 0 && turns % refreshEvery == 0) ScreenRefresh.run(this)
         showScreen()
@@ -409,6 +411,9 @@ class PdfReaderActivity : ComponentActivity() {
 
     private fun nowSeconds(): Long = SystemClock.elapsedRealtime() / 1000
 
+    /** The reading day right now, so a session over midnight is booked to the day it ends on. */
+    private fun today(): LocalDate = DayBoundary(dayBoundaryHour).dateOf(Instant.now(), ZoneId.systemDefault())
+
     // -- What the Compose layer may ask for ---------------------------------------------------------
 
     private val actions = object : PdfActions {
@@ -456,6 +461,7 @@ class PdfReaderActivity : ComponentActivity() {
         override fun step(direction: Int) = this@PdfReaderActivity.step(direction)
 
         override fun goToPage(pageNumber: Int) {
+            ui.notice = null
             ui.panel = PdfPanel.None
             startFastPen()
             val index = (pageNumber - 1).coerceIn(0, (ui.pageCount - 1).coerceAtLeast(0))
@@ -591,7 +597,7 @@ class PdfReaderActivity : ComponentActivity() {
         val seconds = timer.take()
         if (pages != null) {
             val snapshot = currentAnnotations()
-            val day = today
+            val day = today()
             worker.execute {
                 reading.save(bookId, snapshot)
                 reading.addReadingTime(bookId, day, seconds)

@@ -48,6 +48,10 @@ class InkNoteController(
     var pageIndex: Int = 0
         private set
 
+    /** When the file on disk was last written, by this controller or by whoever wrote what it was given. The opener sets it. */
+    @Volatile
+    var diskStamp: Long = 0L
+
     val pageCount: Int get() = pages.size
 
     private var canvas: InkCanvasView? = null
@@ -166,6 +170,22 @@ class InkNoteController(
         return InkNote(pageWidth, pageHeight, template, pages.map { InkPageData(it.strokes, it.preview) })
     }
 
+    /** True when nothing here waits to be saved, so the note may be read again without losing a stroke. Main thread only. */
+    fun isClean(): Boolean = mayWrite && !unsaved && lastWrite?.isDone != false
+
+    /** Takes the version of the note that is on the disk now. Call it only when [isClean] said yes. */
+    fun reload(note: InkNote, stamp: Long) {
+        pages.clear()
+        pages += note.pages.map { PageSlot(it.strokes, it.preview, it.preview == null) }
+        if (pages.isEmpty()) pages += PageSlot(emptyList(), null, true)
+        pageWidth = note.pageWidth
+        pageHeight = note.pageHeight
+        template = note.template
+        pageIndex = pageIndex.coerceAtMost(pages.size - 1)
+        diskStamp = stamp
+        showCurrentPage()
+    }
+
     fun save() {
         main.removeCallbacks(autosave)
         if (!unsaved || closed) return
@@ -189,6 +209,7 @@ class InkNoteController(
                 val started = System.currentTimeMillis()
                 val data = frozen.map { InkPageData(it.strokes, it.preview) }
                 val ok = repository.save(path, InkNote(width, height, template, data))
+                if (ok) diskStamp = repository.stampOf(path)
                 val took = System.currentTimeMillis() - started
                 if (!ok || took > 500) AppLog.i(TAG, "Saved $path: ok=$ok, ${data.size} pages, $took ms")
                 if (!ok) main.post { unsaved = true }
@@ -212,6 +233,7 @@ class InkNoteController(
                 }
                 val data = frozen.mapIndexed { index, page -> InkPageData(page.strokes, fresh[index]) }
                 if (repository.save(path, InkNote(width, height, template, data))) {
+                    diskStamp = repository.stampOf(path)
                     main.post {
                         frozen.forEachIndexed { index, page ->
                             // Only if nobody drew on the page in the meantime.

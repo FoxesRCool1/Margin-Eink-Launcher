@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import io.github.foxesrcool1.margin.core.apps.AppFolder
 import io.github.foxesrcool1.margin.core.apps.AppFolders
+import io.github.foxesrcool1.margin.core.books.BooksRepository
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.ink.InkNote
 import io.github.foxesrcool1.margin.core.ink.InkNotesRepository
@@ -265,13 +266,54 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     // -- The four tabs ------------------------------------------------------------------
 
+    /** A tiny EPUB with a title and an author in it, the way the library reads them. */
+    private fun epub(title: String, author: String): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("META-INF/container.xml"))
+            zip.write(
+                """<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                  </container>""".toByteArray(),
+            )
+            zip.closeEntry()
+            zip.putNextEntry(java.util.zip.ZipEntry("content.opf"))
+            zip.write(
+                """<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>$title</dc:title><dc:creator>$author</dc:creator></metadata>
+                  </package>""".toByteArray(),
+            )
+            zip.closeEntry()
+        }
+        return out.toByteArray()
+    }
+
+    /**
+     * Seven books: three EPUBs with an author, four PDFs without one. One is
+     * done, two are part way through, the rest are not started. The last name
+     * written is the newest file, and a book with a place saved counts from
+     * the moment it was saved, so Dracula is first.
+     */
+    private fun seedLibrary() {
+        val data = DataRoot.repository(context)
+        listOf("Walden.pdf", "Pride and Prejudice.pdf", "Moby Dick.pdf", "Emma.pdf")
+            .forEach { data.store.write(StorageLayout.bookPath(it), ByteArray(2048)) }
+        data.store.write(StorageLayout.bookPath("Middlemarch.epub"), epub("Middlemarch", "George Eliot"))
+        data.store.write(StorageLayout.bookPath("Jane Eyre.epub"), epub("Jane Eyre", "Charlotte Bronte"))
+        data.store.write(StorageLayout.bookPath("Dracula.epub"), epub("Dracula", "Bram Stoker"))
+
+        val reading = ReadingRepository(data)
+        val library = BooksRepository(data).list()
+        listOf("Jane Eyre" to 1.0, "Middlemarch" to 0.57, "Dracula" to 0.12).forEach { (title, progress) ->
+            val book = library.first { it.metadata.title == title }
+            reading.save(book.bookId, BookAnnotations(progress = progress))
+        }
+    }
+
     @Test
     fun readingLibrary() {
-        val data = DataRoot.repository(context)
-        listOf("Walden.pdf", "Pride and Prejudice.pdf", "Moby Dick.pdf", "Middlemarch.pdf", "Emma.pdf", "Jane Eyre.pdf", "Dracula.pdf")
-            .forEach { data.store.write(StorageLayout.bookPath(it), ByteArray(2048)) }
+        seedLibrary()
         compose.setContent { EinkTheme { ReadingScreen(onBack = {}) } }
-        // The newest file is first, so the last name written is the one on page one.
         waitForText("Dracula")
         capture("reading")
     }
@@ -732,6 +774,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     @Test
     fun splitTypedNoteBesideTheLibrary() {
+        seedLibrary()
         val notes = NotesRepository(DataRoot.repository(context))
         val path = notes.createNote(notes.rootPath, "Reading list")!!
         notes.write(path, "# Reading list\n\nWalden, then Middlemarch.")

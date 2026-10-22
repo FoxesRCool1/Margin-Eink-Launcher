@@ -199,6 +199,8 @@ class InkCanvasView(context: Context) : View(context) {
 
     private fun afterHistoryChange(changed: List<InkStroke>) {
         if (changed.isEmpty()) return
+        // A stroke still owed that this change takes away must not be painted back later.
+        forgetOwed(changed.filter { stroke -> owedStrokes.any { it === stroke } })
         rebuildAround(changed)
         onInkChanged?.invoke()
     }
@@ -458,14 +460,23 @@ class InkCanvasView(context: Context) : View(context) {
         if (removed.isEmpty()) return
         if (deviceDrawsLive) {
             // The fast overlay is on the glass. Repaint under it once it is gone.
-            removed.forEach { stroke ->
-                owedBox.union(stroke.minX - stroke.width, stroke.minY - stroke.width, stroke.maxX + stroke.width, stroke.maxY + stroke.width)
-            }
-            owedStrokes.removeAll { owed -> removed.any { it === owed } }
+            forgetOwed(removed)
         } else {
             rebuildAround(removed)
         }
         onInkChanged?.invoke()
+    }
+
+    /**
+     * With the fast pen the tablet's own line may still be on the glass for strokes
+     * that left the page. Their place is cleaned when the wait is over, and an owed
+     * stroke is dropped so it cannot be painted back.
+     */
+    private fun forgetOwed(gone: List<InkStroke>) {
+        gone.forEach { stroke ->
+            owedBox.union(stroke.minX - stroke.width, stroke.minY - stroke.width, stroke.maxX + stroke.width, stroke.maxY + stroke.width)
+        }
+        owedStrokes.removeAll { owed -> gone.any { it === owed } }
     }
 
     private fun schedulePayOwed() {

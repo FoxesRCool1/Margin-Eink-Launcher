@@ -162,6 +162,39 @@ class InkCanvasViewTest {
     }
 
     @Test
+    fun `undo inside the wait does not paint the stroke back`() {
+        view.deviceDrawsLive = true
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 100f, 300f to 100f)
+        view.undo()
+        assertEquals(0, view.editor.strokeCount)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1500))
+        assertEquals(Color.WHITE, pixel(200, 100))
+    }
+
+    @Test
+    fun `clearing the page inside the wait does not paint the strokes back`() {
+        view.deviceDrawsLive = true
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 100f, 300f to 100f)
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 300f, 300f to 300f)
+        view.clearPage()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1500))
+        assertEquals(0, view.editor.strokeCount)
+        assertEquals(Color.WHITE, pixel(200, 100))
+        assertEquals(Color.WHITE, pixel(200, 300))
+    }
+
+    @Test
+    fun `redo inside the wait paints the stroke once`() {
+        view.deviceDrawsLive = true
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 100f, 300f to 100f)
+        view.undo()
+        view.redo()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1500))
+        assertEquals(1, view.editor.strokeCount)
+        assertEquals(Color.BLACK, pixel(200, 100))
+    }
+
+    @Test
     fun `a loaded page is painted and a page change starts a new history`() {
         view.setPage(listOf(InkTestData.line(200f, 200f, 600f, 200f, width = 8f)), 1440f, 1920f, PageTemplate.Lined)
         assertNotEquals(Color.WHITE, pixel(200, 100))

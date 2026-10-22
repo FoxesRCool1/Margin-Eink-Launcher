@@ -166,7 +166,7 @@ internal fun InkPane(
     LaunchedEffect(path) {
         val repository = InkNotesRepository(DataRoot.repository(context))
         val started = System.currentTimeMillis()
-        val load = withContext(AppDispatchers.io) { repository.load(path) }
+        val (stamp, load) = withContext(AppDispatchers.io) { repository.stampOf(path) to repository.load(path) }
         io.github.foxesrcool1.margin.core.speed.SpeedWatch.check("Opening the handwritten note", System.currentTimeMillis() - started, io.github.foxesrcool1.margin.core.speed.SpeedWatch.Budget.OPEN_NOTE)
         val (note, problem) = when (load) {
             is InkNoteLoad.Loaded -> load.note to null
@@ -175,6 +175,7 @@ internal fun InkPane(
         }
         if (problem != null) AppLog.e(TAG, "Could not read $path: $problem")
         val controller = InkNoteController(repository, path, note, mayWrite = problem == null)
+        controller.diskStamp = stamp
         pageCount = controller.pageCount
         open = OpenInkNote(controller, problem)
     }
@@ -197,6 +198,27 @@ internal fun InkPane(
         val controller = open?.controller ?: return
         pageIndex = controller.pageIndex
         pageCount = controller.pageCount
+    }
+
+    // Another screen may have written this note while the app was away. A pane
+    // that saves its older copy later would put that copy over the newer file.
+    // With nothing unsaved here, a file newer than what this pane wrote or read
+    // last is read again. Ink that is not saved yet is never touched.
+    val resumes = remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumes.intValue++ }
+    LaunchedEffect(resumes.intValue) {
+        val controller = open?.controller ?: return@LaunchedEffect
+        if (!controller.isClean()) return@LaunchedEffect
+        val repository = InkNotesRepository(DataRoot.repository(context))
+        val (stamp, load) = withContext(AppDispatchers.io) {
+            val stamp = repository.stampOf(path)
+            stamp to if (stamp != controller.diskStamp) repository.load(path) else null
+        }
+        if (load is InkNoteLoad.Loaded && controller.isClean()) {
+            controller.reload(load.note, stamp)
+            refreshPages()
+            AppLog.i(TAG, "Read $path again: it was changed elsewhere")
+        }
     }
 
     fun turn(by: Int) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import io.github.foxesrcool1.margin.design.components.EinkTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.ConfirmDialog
 import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
@@ -104,7 +106,7 @@ private fun MenuBar(state: ReaderUiState, actions: ReaderActions, modifier: Modi
             if (state.settings.goalMinutes > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 CapsLabel(
-                    text = "Today ${state.secondsToday / 60} of ${state.settings.goalMinutes} minutes",
+                    text = "${state.secondsToday / 60} / ${state.settings.goalMinutes} min today",
                     style = EinkType.capsSmall,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -222,7 +224,7 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
             items = state.annotations.highlights,
             pageSize = 5,
             rowHeight = NoteRowHeight,
-            emptyText = "Hold a word to select text, then press the marker",
+            emptyText = "Hold a word, then press the marker",
         ) { _, highlight ->
             EinkRow(
                 onClick = { actions.goTo(highlight) },
@@ -250,6 +252,7 @@ private fun noteSummary(highlight: Highlight): String = buildString {
 @Composable
 private fun HighlightPanel(state: ReaderUiState, highlightId: String, actions: ReaderActions, modifier: Modifier = Modifier) {
     val highlight = state.annotations.highlight(highlightId)
+    var asking by remember(highlightId) { mutableStateOf(false) }
     Column(modifier = modifier.fillMaxWidth().background(EinkColors.Paper)) {
         HairlineDivider(thickness = EinkDimens.rule)
         Column(modifier = Modifier.padding(16.dp)) {
@@ -273,11 +276,25 @@ private fun HighlightPanel(state: ReaderUiState, highlightId: String, actions: R
                     selected = !highlight?.inkNotePath.isNullOrBlank(),
                     onClick = { actions.handwrite(highlightId) },
                 )
-                IconPressButton(icon = Lucide.Trash2, label = "Remove the highlight", onClick = { actions.remove(highlightId) })
+                IconPressButton(icon = Lucide.Trash2, label = "Remove the highlight", onClick = { asking = true })
                 Spacer(modifier = Modifier.weight(1f))
                 IconPressButton(icon = Lucide.X, label = "Close", onClick = { actions.show(ReaderPanel.None) })
             }
         }
+    }
+    if (asking) {
+        val hasNote = !highlight?.note.isNullOrBlank() || !highlight?.inkNotePath.isNullOrBlank()
+        ConfirmDialog(
+            title = "Remove this highlight?",
+            message = if (hasNote) "Its note goes too." else "This cannot be undone.",
+            confirmText = "Remove",
+            cancelText = "Keep",
+            onConfirm = {
+                asking = false
+                actions.remove(highlightId)
+            },
+            onDismiss = { asking = false },
+        )
     }
 }
 
@@ -285,6 +302,8 @@ private fun HighlightPanel(state: ReaderUiState, highlightId: String, actions: R
 private fun NoteEditorPanel(state: ReaderUiState, highlightId: String, actions: ReaderActions) {
     val highlight = state.annotations.highlight(highlightId)
     var text by remember(highlightId) { mutableStateOf(highlight?.note.orEmpty()) }
+    // The activity keeps a draft on Back and on Pause, so it needs to see it.
+    DisposableEffect(highlightId) { onDispose { state.noteDraft = null } }
 
     FullPanel(
         title = "Note",
@@ -298,7 +317,10 @@ private fun NoteEditorPanel(state: ReaderUiState, highlightId: String, actions: 
         Spacer(modifier = Modifier.height(EinkDimens.targetGap))
         EinkTextField(
             value = text,
-            onValueChange = { text = it },
+            onValueChange = {
+                text = it
+                state.noteDraft = it
+            },
             textStyle = EinkType.body,
             modifier = Modifier
                 .fillMaxWidth()

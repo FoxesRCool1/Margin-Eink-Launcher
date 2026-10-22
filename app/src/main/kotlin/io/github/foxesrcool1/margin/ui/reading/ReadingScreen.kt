@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.ui.reading
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import kotlin.math.roundToInt
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -19,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import io.github.foxesrcool1.margin.ui.split.PageOpener
@@ -184,7 +187,7 @@ fun ReadingScreen(
 
         if (readerSettings.goalMinutes > 0) {
             CapsLabel(
-                text = "Read today: ${secondsToday / 60} of ${readerSettings.goalMinutes} minutes",
+                text = "${secondsToday / 60} / ${readerSettings.goalMinutes} min today",
                 style = EinkType.capsSmall,
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -259,26 +262,40 @@ private fun BookRow(
         val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
 
-        Column(modifier = Modifier.fillMaxWidth()) {
-            EinkText(
-                text = book.metadata.title,
-                style = EinkType.rowTitle.copy(color = foreground),
-                maxLines = 1,
-            )
-            CapsLabel(
-                text = buildString {
-                    append(book.metadata.author ?: "Unknown author")
-                    append("  .  ")
-                    append(if (book.isPdf) "PDF" else "EPUB")
-                    append("  .  ")
-                    append(if (progress > 0.0) "${(progress * 100).toInt()} % read" else "Not started")
-                },
-                style = EinkType.capsSmall.copy(color = faded),
-                maxLines = 1,
-            )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                EinkText(
+                    text = book.metadata.title,
+                    style = EinkType.rowTitle.copy(color = foreground),
+                    maxLines = 1,
+                )
+                val author = book.metadata.author
+                if (author != null && author.isNotBlank()) {
+                    CapsLabel(
+                        text = author,
+                        style = EinkType.capsSmall.copy(color = faded),
+                        maxLines = 1,
+                    )
+                }
+            }
+            val mark = progressMark(progress)
+            if (mark != null) {
+                CapsLabel(
+                    text = mark,
+                    style = EinkType.capsSmall.copy(color = foreground),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
         }
     }
     HairlineDivider(color = EinkColors.Faded)
+}
+
+/** The small mark at the right end of a library row: "12%", "Done" at 100%, nothing for a book not started. */
+internal fun progressMark(progress: Double): String? {
+    if (progress <= 0.0) return null
+    val percent = (progress * 100).roundToInt()
+    return if (percent >= 100) "Done" else "${percent.coerceAtLeast(1)}%"
 }
 
 /** A screen of its own for the book, and the split screen, if one is open, goes along. See [PageOpener]. */

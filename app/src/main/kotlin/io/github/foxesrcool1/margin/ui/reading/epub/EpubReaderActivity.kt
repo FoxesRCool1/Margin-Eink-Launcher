@@ -19,6 +19,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withStarted
 import io.github.foxesrcool1.margin.core.eink.ScreenRefresh
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
@@ -97,6 +98,9 @@ class ReaderUiState {
     var secondsToday by mutableStateOf(0L)
     var notice by mutableStateOf<String?>(null)
 
+    /** What is typed in the note editor and not saved yet. Null until the first key. */
+    var noteDraft by mutableStateOf<String?>(null)
+
     /** The split screen: a note beside the book. */
     var split by mutableStateOf(false)
 }
@@ -156,7 +160,7 @@ class EpubReaderActivity : FragmentActivity() {
     private val timer = ReadingTimer()
     private var pageTurns = 0
     private var saveJob: Job? = null
-    private var today: LocalDate = LocalDate.now()
+    private var dayBoundaryHour = DayBoundary.DEFAULT_HOUR
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Never restore fragments. The book view cannot be rebuilt before the
@@ -216,9 +220,7 @@ class EpubReaderActivity : FragmentActivity() {
         onBackPressedDispatcher.addCallback(
             this,
             object : androidx.activity.OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    if (ui.panel != ReaderPanel.None) ui.panel = ReaderPanel.None else finish()
-                }
+                override fun handleOnBackPressed() = goBack()
             },
         )
 
@@ -310,30 +312,30 @@ class EpubReaderActivity : FragmentActivity() {
         val started = System.currentTimeMillis()
         ui.settings = settingsStore.reader.first()
 
-        val (opened, annotations, day) = withContext(AppDispatchers.io) {
+        val (opened, annotations, hour) = withContext(AppDispatchers.io) {
             // Finding the data folder touches the disk, so it is done here
             // and not on the main thread. The speed log caught it.
             val file = File(DataRoot.folder(this@EpubReaderActivity), RelativePaths.normalise(bookPath))
             val data = DataRoot.repository(this@EpubReaderActivity)
-            val hour = runCatching { HabitsRepository(data).load().dayBoundaryHour }.getOrDefault(DayBoundary.DEFAULT_HOUR)
             Triple(
                 EpubOpener.open(this@EpubReaderActivity, file),
                 reading.load(bookId),
-                DayBoundary(hour).dateOf(Instant.now(), ZoneId.systemDefault()),
+                runCatching { HabitsRepository(data).load().dayBoundaryHour }.getOrDefault(DayBoundary.DEFAULT_HOUR),
             )
         }
-        today = day
+        dayBoundaryHour = hour
 
         if (opened == null) {
             ui.loading = false
-            ui.failure = "This book could not be opened. The log says why."
+            ui.failure = "This book will not open. See the log."
             return
         }
         publication = opened
         if (ui.title.isBlank()) ui.title = opened.metadata.title.orEmpty()
         ui.annotations = annotations.copy(bookPath = bookPath, title = ui.title)
         ui.contents = flatten(opened.tableOfContents, 0)
-        loggedSecondsToday = withContext(AppDispatchers.io) { reading.secondsReadOn(today) }
+        val day = today()
+        loggedSecondsToday = withContext(AppDispatchers.io) { reading.secondsReadOn(day) }
         ui.secondsToday = loggedSecondsToday
 
         val factory = EpubNavigatorFactory(opened)
@@ -352,8 +354,14 @@ class EpubReaderActivity : FragmentActivity() {
                 selectionActionModeCallback = selectionCallback
             },
         )
-        supportFragmentManager.commitNow {
-            add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), NAVIGATOR_TAG)
+        // The open can end after Home was pressed. The fragment manager has
+        // saved its state by then and refuses a commit, so this waits for the
+        // screen to come back. Nothing is lost by waiting: no fragment is ever
+        // restored (see onCreate), and the place in the book is saved by this app.
+        withStarted {
+            supportFragmentManager.commitNow {
+                add(CONTAINER_ID, EpubNavigatorFragment::class.java, Bundle(), NAVIGATOR_TAG)
+            }
         }
         val made = supportFragmentManager.findFragmentByTag(NAVIGATOR_TAG) as EpubNavigatorFragment
         navigator = made
@@ -376,6 +384,35 @@ class EpubReaderActivity : FragmentActivity() {
                 flatten(link.children, depth + 1)
         }
 
+    // -- Back, and the note that is half typed -----------------------------------------
+
+    /** Back and Escape close whatever is open on top of the page first, and the book only when nothing is. */
+    private fun goBack() {
+        if (ui.panel != ReaderPanel.None) closePanel() else finish()
+    }
+
+    /** Closes the panel on top of the page. A note half typed is kept, see [keepNoteDraft]. */
+    private fun closePanel() {
+        if (ui.panel is ReaderPanel.NoteEditor) {
+            keepNoteDraft()
+            lifecycleScope.launch { saveNow() }
+        }
+        ui.panel = ReaderPanel.None
+    }
+
+    /**
+     * A note half typed is kept when the editor goes away without Save, by
+     * Back or by Pause. An empty draft saves nothing. Cancel is the one way to
+     * throw a draft away, and it says so.
+     */
+    private fun keepNoteDraft() {
+        val panel = ui.panel as? ReaderPanel.NoteEditor ?: return
+        val draft = ui.noteDraft?.trim().orEmpty()
+        val highlight = ui.annotations.highlight(panel.highlightId) ?: return
+        if (draft.isEmpty() || draft == highlight.note) return
+        ui.annotations = ui.annotations.withHighlight(highlight.copy(note = draft))
+    }
+
     // -- Turning pages -------------------------------------------------------------
 
     private fun turnPage(direction: Int) {
@@ -396,7 +433,7 @@ class EpubReaderActivity : FragmentActivity() {
             val width = root.width.takeIf { it > 0 } ?: return false
             val x = event.point.x
             when {
-                ui.panel != ReaderPanel.None -> ui.panel = ReaderPanel.None
+                ui.panel != ReaderPanel.None -> closePanel()
                 x < width * 0.3f -> turnPage(-1)
                 x > width * 0.7f -> turnPage(1)
                 else -> {
@@ -420,7 +457,7 @@ class EpubReaderActivity : FragmentActivity() {
         }
 
         KeyEvent.KEYCODE_ESCAPE -> {
-            if (ui.panel != ReaderPanel.None) ui.panel = ReaderPanel.None else finish()
+            goBack()
             true
         }
 
@@ -597,10 +634,14 @@ class EpubReaderActivity : FragmentActivity() {
         }
 
         override fun remove(highlightId: String) {
+            val card = ui.annotations.highlight(highlightId)?.inkNotePath.orEmpty()
             ui.annotations = ui.annotations.without(highlightId)
             ui.panel = ReaderPanel.None
             lifecycleScope.launch {
                 saveNow()
+                // The handwritten card goes with its highlight. Left behind,
+                // nothing would point to it and nothing could open it again.
+                if (card.isNotBlank()) withContext(AppDispatchers.io) { reading.deleteInkNote(card) }
                 showHighlights()
             }
         }
@@ -630,6 +671,9 @@ class EpubReaderActivity : FragmentActivity() {
 
     private fun nowSeconds(): Long = android.os.SystemClock.elapsedRealtime() / 1000
 
+    /** The reading day right now, so a session over midnight is booked to the day it ends on. */
+    private fun today(): LocalDate = DayBoundary(dayBoundaryHour).dateOf(Instant.now(), ZoneId.systemDefault())
+
     /** What the log already holds for today. This session is added on top when the menu opens. */
     private var loggedSecondsToday = 0L
 
@@ -648,13 +692,15 @@ class EpubReaderActivity : FragmentActivity() {
         timer.pause(nowSeconds())
         val seconds = timer.take()
         selectionMode?.finish()
+        // A note half typed is saved with the rest. The editor stays open.
+        keepNoteDraft()
         val snapshot = ui.annotations
         if (::reading.isInitialized && publication != null) {
             loggedSecondsToday += seconds
             // Blocking, and short. The process may be gone a moment from now.
             runCatching {
                 reading.save(bookId, snapshot)
-                reading.addReadingTime(bookId, today, seconds)
+                reading.addReadingTime(bookId, today(), seconds)
             }.onFailure { AppLog.e(TAG, "Could not save on the way out", it) }
         }
         super.onPause()

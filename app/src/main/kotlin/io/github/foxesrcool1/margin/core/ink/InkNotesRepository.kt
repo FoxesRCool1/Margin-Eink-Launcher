@@ -38,6 +38,9 @@ class InkNotesRepository(private val data: DataRepository) {
         }
     }
 
+    /** When the file was last written. A different value than before means someone wrote it. 0 for a file that is not there. */
+    fun stampOf(path: String): Long = data.store.lastModified(path)
+
     fun save(path: String, note: InkNote): Boolean {
         val ok = data.store.write(path, InkNoteCodec.encode(note))
         if (!ok) AppLog.e(TAG, "Could not save $path")
