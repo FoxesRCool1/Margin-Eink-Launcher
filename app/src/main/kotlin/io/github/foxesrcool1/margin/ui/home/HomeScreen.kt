@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import io.github.foxesrcool1.margin.design.EinkShapes
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.LocalBotanicalArtEnabled
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.rememberFittedCaps
 import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
@@ -315,10 +317,18 @@ private fun HomeClock(
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
+        val dateStyle = EinkType.caps.copy(textAlign = TextAlign.Center)
         CapsLabel(
             text = HomeStrings.date(time),
-            style = EinkType.caps.copy(textAlign = TextAlign.Center),
+            style = dateStyle,
             modifier = Modifier.fillMaxWidth(),
+            // Half a screen, or the tablet's text size turned up: the type
+            // gets smaller before the month gets dots.
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 6.sp,
+                maxFontSize = dateStyle.fontSize,
+                stepSize = 1.sp,
+            ),
         )
     }
 }
@@ -426,6 +436,7 @@ private fun TabGrid(
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val gap = 20.dp
         val cell = minOf((maxHeight - gap) / 2, (maxWidth - gap) / 2, 120.dp)
+        val labelStyle = rememberFittedCaps(LauncherRoute.tabs.map { it.title }, cell)
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             LauncherRoute.tabs.chunked(2).forEach { line ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
@@ -434,6 +445,7 @@ private fun TabGrid(
                             route = tab,
                             side = cell,
                             showLabel = showLabels,
+                            labelStyle = labelStyle,
                             onClick = { onOpenTab(tab) },
                         )
                     }
@@ -449,6 +461,7 @@ private fun HomeTab(
     route: LauncherRoute,
     side: Dp,
     showLabel: Boolean,
+    labelStyle: TextStyle,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -481,7 +494,7 @@ private fun HomeTab(
             Spacer(modifier = Modifier.height(12.dp))
             CapsLabel(
                 text = route.title,
-                style = EinkType.capsSmall.copy(color = foreground),
+                style = labelStyle.copy(color = foreground),
                 modifier = Modifier.clearAndSetSemantics { },
             )
         }

@@ -6,14 +6,31 @@ import io.github.foxesrcool1.margin.core.storage.RelativePaths
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import java.io.IOException
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "ReadingRepository"
 
 /** Positions, highlights, notes and reading time, on top of the data folder. */
 class ReadingRepository(private val data: DataRepository) {
 
+    /**
+     * Books whose annotations file is there but could not be read. Nothing can
+     * be copied out of such a file, so a save would put an empty one over the
+     * notes. Each reader has its own repository, so this lasts while the book
+     * is open.
+     */
+    private val unreadable: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     fun load(bookId: String): BookAnnotations {
-        val text = data.store.readText(StorageLayout.annotationsPath(bookId)) ?: return BookAnnotations()
+        val text = try {
+            data.store.readTextOrThrow(StorageLayout.annotationsPath(bookId))
+        } catch (problem: IOException) {
+            unreadable += bookId
+            AppLog.e(TAG, "Annotations of $bookId could not be read. Nothing is saved over them.", problem)
+            return BookAnnotations()
+        }
+        unreadable -= bookId
+        if (text == null) return BookAnnotations()
         return AnnotationsFile.parse(text) ?: run {
             // Keep the unreadable file. The next save would otherwise write
             // an empty one over notes that a person could still rescue.
@@ -24,8 +41,14 @@ class ReadingRepository(private val data: DataRepository) {
         }
     }
 
-    fun save(bookId: String, annotations: BookAnnotations): Boolean =
-        data.store.writeText(StorageLayout.annotationsPath(bookId), AnnotationsFile.serialise(annotations))
+    /** False when the file on disk could not be read: see [savesBlocked]. */
+    fun save(bookId: String, annotations: BookAnnotations): Boolean {
+        if (savesBlocked(bookId)) return false
+        return data.store.writeText(StorageLayout.annotationsPath(bookId), AnnotationsFile.serialise(annotations))
+    }
+
+    /** True after [load] met a file it could not read. The reader says so. */
+    fun savesBlocked(bookId: String): Boolean = bookId in unreadable
 
     /** Progress of every book that has been opened, by book id. One small file each. */
     fun progressOf(bookId: String): Double =

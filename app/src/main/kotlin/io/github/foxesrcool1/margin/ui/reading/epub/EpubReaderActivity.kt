@@ -335,6 +335,7 @@ class EpubReaderActivity : FragmentActivity() {
         publication = opened
         if (ui.title.isBlank()) ui.title = opened.metadata.title.orEmpty()
         ui.annotations = annotations.copy(bookPath = bookPath, title = ui.title)
+        if (reading.savesBlocked(bookId)) ui.notice = "Old notes are unreadable. Nothing new is saved."
         ui.contents = flatten(opened.tableOfContents, 0)
         val day = today()
         loggedSecondsToday = withContext(AppDispatchers.io) { reading.secondsReadOn(day) }

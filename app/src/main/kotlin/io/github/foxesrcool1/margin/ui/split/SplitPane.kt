@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,6 +43,7 @@ import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkShapes
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.rememberFittedCaps
 import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.IconPressButton
@@ -244,6 +246,7 @@ internal fun ChoosePage(split: SplitState, bookTitle: String?) {
         ) {
             val gap = 12.dp
             val grid = ChoiceGrid.best(choices.size, maxWidth, maxHeight, gap)
+            val labelStyle = rememberFittedCaps(choices.map { it.label }, grid.cell)
             Column(
                 verticalArrangement = Arrangement.spacedBy(gap),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -251,7 +254,7 @@ internal fun ChoosePage(split: SplitState, bookTitle: String?) {
                 choices.chunked(grid.columns).forEach { line ->
                     Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                         line.forEach { choice ->
-                            ChoiceCell(choice, grid.cell, showLabels) { split.show(choice.page) }
+                            ChoiceCell(choice, grid.cell, showLabels, labelStyle) { split.show(choice.page) }
                         }
                     }
                 }
@@ -287,7 +290,7 @@ internal data class ChoiceGrid(val columns: Int, val cell: Dp) {
 
 /** One choice: an icon in a round box. The whole box is the target, and the whole box inverts. */
 @Composable
-private fun ChoiceCell(choice: Choice, side: Dp, showLabel: Boolean, onClick: () -> Unit) {
+private fun ChoiceCell(choice: Choice, side: Dp, showLabel: Boolean, labelStyle: TextStyle, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
@@ -310,7 +313,7 @@ private fun ChoiceCell(choice: Choice, side: Dp, showLabel: Boolean, onClick: ()
             Spacer(modifier = Modifier.height(8.dp))
             CapsLabel(
                 text = choice.label,
-                style = EinkType.capsSmall.copy(color = foreground),
+                style = labelStyle.copy(color = foreground),
                 maxLines = 1,
                 modifier = Modifier.clearAndSetSemantics { },
             )

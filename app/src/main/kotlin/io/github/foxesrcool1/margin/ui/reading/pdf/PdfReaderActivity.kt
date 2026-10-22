@@ -244,6 +244,7 @@ class PdfReaderActivity : ComponentActivity() {
             ui.pageIndex = position.pageIndex
             ui.zoom = position.zoom
             ui.cropMargins = position.cropMargins
+            if (reading.savesBlocked(bookId)) ui.notice = "Old notes are unreadable. Nothing new is saved."
             ui.loading = false
             timer.resume(nowSeconds())
             val took = System.currentTimeMillis() - started

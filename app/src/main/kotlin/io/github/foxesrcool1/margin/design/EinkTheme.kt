@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -17,6 +19,15 @@ val LocalEinkTextStyle = staticCompositionLocalOf { EinkType.body }
 
 /** Section 5: the corner line art can be turned off by the user. */
 val LocalBotanicalArtEnabled = staticCompositionLocalOf { true }
+
+/**
+ * Selected text lies on light grey, with black handles. Compose's default is
+ * Android blue, which the panel shows as a muddy grey dither.
+ */
+private val SelectionColors = TextSelectionColors(
+    handleColor = EinkColors.Ink,
+    backgroundColor = EinkColors.Ink.copy(alpha = 0.25f),
+)
 
 /**
  * The root of every screen.
@@ -42,6 +53,7 @@ fun EinkTheme(
     CompositionLocalProvider(
         LocalEinkTextStyle provides textStyle,
         LocalBotanicalArtEnabled provides botanicalArt,
+        LocalTextSelectionColors provides SelectionColors,
     ) {
         Box(
             modifier = Modifier

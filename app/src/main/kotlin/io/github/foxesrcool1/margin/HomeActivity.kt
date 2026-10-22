@@ -3,11 +3,13 @@ package io.github.foxesrcool1.margin
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
@@ -60,6 +62,7 @@ import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitRestore
 import io.github.foxesrcool1.margin.ui.split.SplitReturn
 import io.github.foxesrcool1.margin.ui.split.SplitState
+import io.github.foxesrcool1.margin.ui.split.halvesSideBySide
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.rememberPageOpener
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
@@ -151,6 +154,21 @@ class HomeActivity : ComponentActivity() {
             val context = LocalContext.current
             val settings = remember(context) { SettingsStore(context) }
             val artOn by settings.botanicalArt.collectAsStateWithLifecycle(initialValue = true)
+
+            // Upright with the split open, the lower half sits under the
+            // keyboard. Each half is wider than tall already, so the window
+            // can shrink for the keyboard and no page changes shape. Home on
+            // its own keeps panning: a whole screen that gets shorter turns
+            // wide, and the Journal then loses its keyboard.
+            val resize = split.isOpen && !halvesSideBySide()
+            DisposableEffect(resize) {
+                val before = window.attributes.softInputMode
+                if (resize) {
+                    val keepState = before and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()
+                    window.setSoftInputMode(keepState or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                }
+                onDispose { window.setSoftInputMode(before) }
+            }
 
             EinkTheme(botanicalArt = artOn) {
                 SplitLayout(

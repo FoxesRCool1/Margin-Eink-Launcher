@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import io.github.foxesrcool1.margin.core.apps.AppFolder
@@ -83,6 +85,7 @@ import io.github.foxesrcool1.margin.ui.home.LauncherRoute
 import io.github.foxesrcool1.margin.ui.ink.InkCanvasView
 import io.github.foxesrcool1.margin.ui.split.DetachedPane
 import io.github.foxesrcool1.margin.ui.split.PaneHost
+import io.github.foxesrcool1.margin.ui.split.ChoosePage
 import io.github.foxesrcool1.margin.ui.split.PanePage
 import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
@@ -185,6 +188,52 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
             }
         }
         capture("home")
+    }
+
+    /** The tablet's text size at double: the labels under the icons get smaller, not cut. */
+    @Test
+    fun homeAtDoubleTextSize() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
+                EinkTheme {
+                    HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, use24Hour = true, battery = 82, wifi = true, showLabels = true)
+                }
+            }
+        }
+        capture("home_double_text")
+    }
+
+    /** Beside a book the choice starts with "Notes on this book", the longest label of any grid. */
+    @Test
+    fun splitChoiceBesideABookWithLabels() {
+        val store = SettingsStore(context)
+        runBlocking { store.setHomeLabels(true) }
+        try {
+            val split = SplitState(mainPage = { null }).apply { open(PanePage.Choose) }
+            compose.setContent {
+                EinkTheme {
+                    SplitLayout(split = split, main = {}, pane = { ChoosePage(split, bookTitle = "Walden") })
+                }
+            }
+            // The labels come from a setting read off the main thread, and
+            // they carry no text for the tests to wait on: give it a moment.
+            repeat(10) {
+                Thread.sleep(50)
+                compose.waitForIdle()
+            }
+            capture("split_choice_book_labels")
+        } finally {
+            runBlocking { store.setHomeLabels(false) }
+        }
+    }
+
+    @Test
+    fun splitHomeAtDoubleTextSize() {
+        split(PanePage.Choose, "split_home_double_text") {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
+                HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, use24Hour = true, battery = 82, wifi = true, showLabels = true)
+            }
+        }
     }
 
     /** The whole home screen: Continue with a book and its percent, a Next line for the evening, 12 hour time. */

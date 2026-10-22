@@ -4,6 +4,69 @@ One section per step. Newest step at the top.
 
 ---
 
+## The open items after round 3: keyboard, notes, labels, selection
+
+Date: 2026-10-22. Branch `Dev`.
+
+### What was done
+
+1. **A note in a stacked split has room with the keyboard up.** At Home the
+   window panned, so the lower half slid under the keyboard: about 3 lines of
+   the note showed, and its page buttons were hidden. Home now resizes for
+   the keyboard while the split is open with one half above the other, like
+   the readers do. The note and its page buttons stay above the keyboard.
+   Home on its own still pans: resizing it turned the Journal into its wide
+   shape and lost the keyboard. Decision 0027.
+2. **A book's notes file that cannot be read is never saved over.** When the
+   file is there but reading it fails, the reader opens the book with no
+   notes, says "Old notes are unreadable. Nothing new is saved.", and writes
+   nothing to that file while the book is open. Before, the next save wrote
+   an empty file over the notes. A file with broken JSON is still kept as
+   `.unreadable.json` before a fresh one is written, as before.
+3. **Labels under icons get smaller, not cut.** At double text size
+   "JOURNAL" under the Home icon ended in dots, and so did "Notes on this
+   book" in the split's choice of pages on the 320 dpi emulator. The labels
+   of one grid now share one size that fits the longest. The date under the
+   clock gets smaller the same way. `rememberFittedCaps` in `CapsLabel.kt`.
+4. **Selected text is light grey**, not Android blue, with black handles.
+   That is the "Go to page" number and any other selection. `EinkTheme`.
+
+### What works
+
+- All unit and screenshot tests (734). New: an unreadable notes file, Home
+  at double text size (whole and in the split), and the choice of pages
+  beside a book with labels, each upright and on its side.
+- In the emulator: a long note in the lower half with the keyboard up, the
+  Journal typed in the lower half, the Journal typed on its own, and a book
+  note beside the EPUB reader.
+
+### What does not work yet
+
+- Side by side, the keyboard still covers the end of a long note. A half
+  there is tall, and the keyboard takes more than half of the height, so
+  resizing would turn it wide. It waits for the tablet test.
+- In the stacked split each half gets half of the room above the keyboard.
+  The note shows about 4 lines at a time in the emulator.
+- In a 320 dp wide half, the battery percent on Home has no room and shows
+  as a dot.
+
+### Device test list
+
+1. Open the split upright. Write in the lower half, open a long note, tap in
+   it. The keyboard comes up, and the note with its page buttons stays above
+   it.
+2. Same, with the Journal in the lower half: tap the keyboard icon and type.
+   The keyboard stays up.
+3. Close the split. Journal, tap the keyboard icon, type. The keyboard stays
+   up.
+4. PDF, More, Go to page. The page number is selected in light grey, not
+   blue.
+5. Android settings, text size at the largest. Home with labels on shows all
+   four labels whole and the same size. Beside a book, the choice of pages
+   shows "Notes on this book" whole.
+
+---
+
 ## Emulator QA round 3, and three last fixes
 
 Date: 2026-10-22. Branch `Dev`.
