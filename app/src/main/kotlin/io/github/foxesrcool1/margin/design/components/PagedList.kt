@@ -87,6 +87,11 @@ fun <T> PagedList(
     rowHeight: Dp? = null,
     itemContent: @Composable (index: Int, item: T) -> Unit,
 ) {
+    // A row height is worked out for the normal text size. With a larger
+    // text size from the tablet settings, the text in a row of that height
+    // was cut off, so the rows grow with the text and fewer fit on a page.
+    val fontScale = LocalDensity.current.fontScale
+    val rowHeight = rowHeight?.let { if (fontScale > 1f) it * fontScale else it }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val size = if (rowHeight != null && constraints.hasBoundedHeight) {
             val fitsAlone = (maxHeight / rowHeight).toInt().coerceAtLeast(1)
