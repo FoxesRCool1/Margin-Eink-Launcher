@@ -30,8 +30,6 @@ Date: 2026-10-22. Branch `Dev`. Decision 0011, "What is left", item 1.
 ### What does not work yet
 
 - A finger drag on the field springs back to the page. Use the buttons.
-- A box that is not a whole number of lines tall shows a part of a line at the
-  bottom edge.
 - The split half 320 dp wide shortens the status word to "RE..." when the page
   buttons are on.
 

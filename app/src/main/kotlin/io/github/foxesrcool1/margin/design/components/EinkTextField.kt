@@ -25,6 +25,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -100,6 +101,9 @@ fun EinkTextField(
 
     // Rule 2: a field of many lines does not rest between pages.
     val padLines = remember { mutableIntStateOf(0) }
+    // How far down the text area the whole lines of this page reach. What is
+    // under it is a part of a line, and it is not painted. Infinity: no clip.
+    var wholeLines by remember { mutableStateOf(Float.POSITIVE_INFINITY) }
     val padding = remember {
         OutputTransformation { if (padLines.intValue > 0) append("\n".repeat(padLines.intValue)) }
     }
@@ -129,6 +133,7 @@ fun EinkTextField(
                 book.at = here
                 if (grid.isPage(here)) {
                     book.index = grid.pageAt(here)
+                    wholeLines = if (fits) Float.POSITIVE_INFINITY else grid.shown(book.index)
                     return@collect
                 }
                 val selection = state.selection
@@ -164,7 +169,7 @@ fun EinkTextField(
         modifier = modifier
             .onFocusChanged { focused = it.isFocused }
             .drawWithContent {
-                drawContent()
+                clipRect(bottom = wholeLines.coerceAtMost(size.height)) { this@drawWithContent.drawContent() }
                 val selection = state.selection
                 val result = layout?.invoke()
                 if (focused && enabled && selection.collapsed && result != null) {
@@ -260,7 +265,7 @@ internal class PageView(val value: Int, val viewport: Int, val layout: TextLayou
  */
 internal class PageGrid(
     private val line: Float,
-    perPage: Int,
+    private val perPage: Int,
     textLines: Int,
     /** All the text is on show at once. */
     fits: Boolean,
@@ -275,6 +280,9 @@ internal class PageGrid(
 
     /** Where page [page] starts, in pixels of scroll. */
     fun offset(page: Int): Int = lineTop(page.coerceIn(0, count - 1) * step).roundToInt()
+
+    /** How far below the top of page [page] its last whole line ends. */
+    fun shown(page: Int): Float = lineTop(page.coerceIn(0, count - 1) * step + perPage) - offset(page)
 
     fun pageOfLine(lineIndex: Int): Int = (lineIndex / step).coerceIn(0, count - 1)
 

@@ -43,7 +43,9 @@ that part is on the owner's test list.
    blank room under the text (an output transformation, the note itself is
    not changed). `TextPages` tells a screen the page and the page count, and
    turns pages with `next()` and `previous()`. The typed note editor shows
-   "2 / 3" and two page buttons when the note is longer than the box. A drag
+   "2 / 3" and two page buttons when the note is longer than the box. The text
+   is clipped under the last whole line of the page, so no line is cut in
+   half at the bottom. A drag
    on the field does not turn pages, it springs back: use the buttons. The
    Journal entry gets the snapping and no buttons, its box is short.
 2. **The highlighter and the page templates are grey.** The plan asks for a
