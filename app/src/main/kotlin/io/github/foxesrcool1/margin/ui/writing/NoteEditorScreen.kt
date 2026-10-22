@@ -323,9 +323,14 @@ fun NoteField(editor: NoteEditor, modifier: Modifier = Modifier, focusOnOpen: Bo
         )
         Spacer(modifier = Modifier.height(8.dp))
         val words = editor.words
+        val count = "$words ${if (words == 1) "word" else "words"}"
+        // "Ready" and "Saved" are the calm states and need no words. Anything
+        // else, like a save that failed, is said. In a narrow half next to the
+        // page buttons the calm words were cut down to "RE...".
+        val quiet = editor.status == "Ready" || editor.status == "Saved"
         Row(verticalAlignment = Alignment.CenterVertically) {
             CapsLabel(
-                text = "$words ${if (words == 1) "word" else "words"}  .  ${editor.status}",
+                text = if (quiet) count else "$count  .  ${editor.status}",
                 style = EinkType.capsSmall.copy(color = EinkColors.Faded),
                 modifier = Modifier.weight(1f),
             )
