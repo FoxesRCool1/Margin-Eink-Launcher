@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.ui.home
 import io.github.foxesrcool1.margin.core.books.BooksRepository
 import io.github.foxesrcool1.margin.core.books.LibraryBook
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
+import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.reading.ReadingRepository
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
@@ -11,14 +12,18 @@ import io.github.foxesrcool1.margin.core.storage.StorageLayout
 sealed interface ContinueTarget {
     val title: String
 
-    /** [percent] is null for a book that was opened and not read into yet. */
-    data class Book(val book: LibraryBook, val percent: Int?) : ContinueTarget {
+    /** The file behind the row, so a tap can check it is still there. */
+    val path: String
+
+    /** [mark] is the progress as the library shows it, null for a book that was opened and not read into yet. */
+    data class Book(val book: LibraryBook, val mark: String?) : ContinueTarget {
         override val title: String get() = book.metadata.title
+        override val path: String get() = book.path
     }
 
-    data class TypedNote(val path: String, override val title: String) : ContinueTarget
+    data class TypedNote(override val path: String, override val title: String) : ContinueTarget
 
-    data class InkNote(val path: String, override val title: String) : ContinueTarget
+    data class InkNote(override val path: String, override val title: String) : ContinueTarget
 }
 
 /**
@@ -35,7 +40,7 @@ class ContinueFinder(private val data: DataRepository) {
         if (lastBook != null && (lastNote == null || lastBook.second > lastNote.stored.lastModified)) {
             val book = lastBook.first
             val progress = ReadingRepository(data).progressOf(book.bookId)
-            return ContinueTarget.Book(book, (progress * 100).toInt().takeIf { it > 0 })
+            return ContinueTarget.Book(book, ReadingProgress.mark(progress))
         }
         if (lastNote == null) return null
         return if (StorageLayout.isInkNote(lastNote.name)) {

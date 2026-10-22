@@ -77,7 +77,7 @@ class ContinueFinderTest {
         val target = finder.find()!!
         assertTrue(target is ContinueTarget.Book)
         assertEquals("Walden", target.title)
-        assertEquals(12, (target as ContinueTarget.Book).percent)
+        assertEquals("12%", (target as ContinueTarget.Book).mark)
     }
 
     @Test
@@ -88,7 +88,7 @@ class ContinueFinderTest {
         val target = finder.find()!!
         assertTrue(target is ContinueTarget.Book)
         assertEquals("Walden", target.title)
-        assertNull((target as ContinueTarget.Book).percent)
+        assertNull((target as ContinueTarget.Book).mark)
     }
 
     // -- Notes ------------------------------------------------------------------

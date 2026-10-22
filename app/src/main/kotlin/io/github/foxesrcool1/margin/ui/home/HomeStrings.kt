@@ -37,9 +37,6 @@ object HomeStrings {
     fun nextOverline(part: PartOfDay): String =
         if (part == PartOfDay.AnyTime) "Next" else "This ${part.title}"
 
-    /** "12%" at the end of the Continue row, or null when there is nothing to say. */
-    fun percent(percent: Int?): String? = percent?.let { "$it%" }
-
     /** The battery icon for a charge: full, half, low, and a warning under 15 %. */
     fun batteryIcon(percent: Int): LucideIcon = when {
         percent >= 70 -> Lucide.BatteryFull

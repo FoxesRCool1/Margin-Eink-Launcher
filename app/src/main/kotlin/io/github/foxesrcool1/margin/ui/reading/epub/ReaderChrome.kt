@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.reading.Highlight
 import io.github.foxesrcool1.margin.core.reading.ReadingLog
+import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
@@ -243,7 +244,7 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
 }
 
 private fun noteSummary(highlight: Highlight): String = buildString {
-    append("${(highlight.progression * 100).toInt()} %")
+    append("${ReadingProgress.percent(highlight.progression)}%")
     if (highlight.chapter.isNotBlank()) append("  .  ").append(highlight.chapter)
     if (highlight.note.isNotBlank()) append("  .  ").append(highlight.note.lineSequence().first())
     if (highlight.inkNotePath.isNotBlank()) append("  .  handwritten note")

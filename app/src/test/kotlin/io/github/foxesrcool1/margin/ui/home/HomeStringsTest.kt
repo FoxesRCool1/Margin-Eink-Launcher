@@ -2,7 +2,6 @@ package io.github.foxesrcool1.margin.ui.home
 
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDateTime
 
@@ -71,11 +70,5 @@ class HomeStringsTest {
         assertEquals("This Morning", HomeStrings.nextOverline(PartOfDay.Morning))
         assertEquals("This Afternoon", HomeStrings.nextOverline(PartOfDay.Afternoon))
         assertEquals("This Evening", HomeStrings.nextOverline(PartOfDay.Evening))
-    }
-
-    @Test
-    fun `the percent reads with a percent sign, or says nothing`() {
-        assertEquals("12%", HomeStrings.percent(12))
-        assertNull(HomeStrings.percent(null))
     }
 }

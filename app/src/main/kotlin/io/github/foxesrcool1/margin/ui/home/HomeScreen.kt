@@ -186,18 +186,24 @@ fun HomeScreen(
                         HomeClock(time, twentyFourHour, clockStyle)
                         Spacer(modifier = Modifier.height(gap))
                         goOn()
-                        Spacer(modifier = Modifier.height(gap))
-                        Spacer(modifier = Modifier.weight(1f))
-                        next()
-                        Spacer(modifier = Modifier.height(4.dp))
                     }
                     // The plant stands over this column, so the icons start below it.
+                    // They sit in the middle of the room between the plant and the
+                    // routine line, or the line under them when there is none.
                     val plantRoom = if (!compact && LocalBotanicalArtEnabled.current) PLANT_SIZE else 0.dp
                     TabGrid(
                         showLabels = showLabels,
                         onOpenTab = onOpenTab,
                         modifier = Modifier.weight(1f).fillMaxHeight().padding(top = plantRoom),
                     )
+                }
+                // The routine line takes the whole width under both columns, as
+                // it does upright, so its button stands at the right edge, over
+                // the controls, and not in the middle of the screen.
+                if (nextRoutineLabel != null) {
+                    Spacer(modifier = Modifier.height(gap))
+                    next()
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             } else {
                 if (!compact) Spacer(modifier = Modifier.height(8.dp))
@@ -331,7 +337,7 @@ private fun ContinueRow(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
-    val percent = (target as? ContinueTarget.Book)?.percent.let(HomeStrings::percent)
+    val percent = (target as? ContinueTarget.Book)?.mark
 
     Row(
         modifier = modifier

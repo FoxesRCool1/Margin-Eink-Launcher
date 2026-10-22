@@ -4,12 +4,17 @@ One section per step. Newest step at the top.
 
 ---
 
+## Emulator QA round 2: Continue, percent, split on the way back, Home on its side
+
+---
+
 ## QA round 2: Journal days, Go to page, Write in the second half, Apps rows
 
 Date: 2026-10-22. Branch `Dev`.
 
 ### What was done
 
+<<<<<<< HEAD
 1. Journal: the habit and routine rows belong to the day on show. On a past
    day they show that day's ticks, the dots end on that day, and a tap ticks
    that day. The streak still counts from today. On today the date is still
@@ -35,6 +40,47 @@ Date: 2026-10-22. Branch `Dev`.
   folder. In the top folder it goes to the choice of pages.
 - Apps, pinned page and A to Z page with some apps hidden: every name starts at
   the same place.
+=======
+1. **Continue after an empty quick note.** The editor now drops the empty
+   note when its screen pauses while closing, which is before Home resumes.
+   Before, Home read its Continue row first and still found the file. A tap
+   on a Continue row whose file is gone opens nothing and reads the row again.
+2. **One percent.** `ReadingProgress` (core/reading) is the one place. It
+   rounds down, shows at least 1% for a book that was started, and says
+   "Done" from 99.5%. The library, Home Continue and the EPUB status line
+   use it ("91%", no space). The PDF status line shows pages and has no
+   percent.
+3. **The split screen comes back.** Home remembers its tab when it gives the
+   split screen to a note, a book or Continue (`SplitReturn`). The screen
+   hands its second half back as it closes. Home then shows that tab again
+   with that page in its second half. A page that the tab shows too stays
+   beside it and Home goes back to Home. A note that is gone is replaced by
+   the choice of pages. If the split screen was closed in the screen, Home
+   comes back unsplit, on its tab. The Home key still lands on a plain Home.
+4. **Home on its side.** The routine line now spans the whole width under
+   both columns, as upright, so Start and Done stand at the right edge. The
+   four icons sit in the middle of the room above it.
+
+### What does not work yet
+
+- A book opened from the second half while another tab is the main half:
+  Back gives Home with that tab's page in the second half, not the exact old
+  layout.
+
+### Device test list
+
+1. Home, Quick note, type nothing, Back. Continue shows the book or note from
+   before, not a time stamp.
+2. A book with progress shows the same percent in Read, on Home and in the
+   reader. A book at the very end shows "Done".
+3. Home, open the split, open Write in the main half and a note from its list:
+   Back returns to Write with the split open as it was.
+4. Home with the split open, tap Continue: Back returns to Home with the
+   split open. Close the split inside the note, then Back: Home, no split.
+5. Press the Home key inside a note opened from a split: Home, plain.
+6. Home on its side with a routine item: the button is at the right edge,
+   over the settings icon. The tab icons are centred above it.
+>>>>>>> 0a53a5a (Fix Continue after an empty quick note, one shared percent, split screen restored on Back, Home on its side)
 
 ---
 

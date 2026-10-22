@@ -32,6 +32,7 @@ import io.github.foxesrcool1.margin.core.notes.NoteText
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.storage.RelativePaths
+import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
@@ -226,14 +227,19 @@ fun rememberNoteEditor(
 
     // A just made quick note that nothing was typed into goes away with the
     // editor. The repository checks the file too, see discardUntouched.
+    // Once it is gone nothing may write it back: the screen pauses first
+    // and is disposed later, and both come here.
+    val discarded = remember(notePath) { AtomicBoolean(false) }
     fun discardIfUntouched(): Boolean {
         val made = createdWith ?: return false
-        return loaded && current.get() == notePath && notes.discardUntouched(notePath, made, text)
+        return (loaded && current.get() == notePath && notes.discardUntouched(notePath, made, text))
+            .also { if (it) discarded.set(true) }
     }
 
     // The last chance to write, and it does not wait for a thread. A writing
     // app that loses the last sentence is not usable.
     fun saveOnTheWayOut(reason: String, closing: Boolean = false) {
+        if (discarded.get()) return
         if (closing && discardIfUntouched()) {
             AppLog.i(TAG, "Nothing was typed into $notePath. The file is deleted.")
             return
@@ -263,8 +269,11 @@ fun rememberNoteEditor(
     // A pause comes before the next screen starts, and a stop only after it
     // is up. The split screen hands a note on to the next screen, which reads
     // it from the disk as it starts, so the note has to be there by then.
+    // It is also the moment to drop an untouched quick note when the screen
+    // is closing: Home resumes before this screen is disposed, and its
+    // Continue row would still find the file.
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
-        saveOnTheWayOut("the screen paused")
+        saveOnTheWayOut("the screen paused", closing = context.findActivity()?.isFinishing == true)
     }
 
     return NoteEditor(text = text, loaded = loaded, status = status, words = words, title = title, onText = { text = it })

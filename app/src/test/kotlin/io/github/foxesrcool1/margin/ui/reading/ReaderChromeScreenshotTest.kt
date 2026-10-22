@@ -61,7 +61,7 @@ class ReaderChromeScreenshotTest {
     private fun state(panel: ReaderPanel) = ReaderUiState().apply {
         loading = false
         title = "Walden"
-        placeLabel = "12 %  .  position 31  .  Economy"
+        placeLabel = "12%  .  position 31  .  Economy"
         secondsToday = 18 * 60
         this.panel = panel
         annotations = BookAnnotations(

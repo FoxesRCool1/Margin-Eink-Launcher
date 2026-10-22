@@ -31,6 +31,7 @@ import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
+import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkTheme
@@ -56,12 +57,15 @@ import io.github.foxesrcool1.margin.ui.split.PanePage
 import io.github.foxesrcool1.margin.ui.split.ScreenPageOpener
 import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
+import io.github.foxesrcool1.margin.ui.split.SplitRestore
+import io.github.foxesrcool1.margin.ui.split.SplitReturn
 import io.github.foxesrcool1.margin.ui.split.SplitState
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.rememberPageOpener
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
 import io.github.foxesrcool1.margin.ui.update.UpdateScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 
 private const val TAG = "HomeActivity"
@@ -106,16 +110,24 @@ class HomeActivity : ComponentActivity() {
     /**
      * Opens notes and books from the tabs. With the split screen open, the new
      * screen takes the second half with it, and Home lets go of its own copy:
-     * one page must not be open in two places.
+     * one page must not be open in two places. [SplitReturn] remembers the tab,
+     * and Back from that screen puts the tab and the second half back.
      */
     private val opener: PageOpener by lazy {
-        ScreenPageOpener(this, carry = { split.carry() }, afterCarry = { resetToHome() })
+        ScreenPageOpener(
+            this,
+            carry = { split.carry()?.also { SplitReturn.leftFrom(route.value) } },
+            afterCarry = { resetToHome() },
+        )
     }
 
     private lateinit var paneInk: PaneInk
 
     private val paneHost = object : PaneHost {
-        override fun openBook(book: LibraryBook) = openBookBeside(this@HomeActivity, split, book, this)
+        override fun openBook(book: LibraryBook) {
+            SplitReturn.leftFrom(route.value)
+            openBookBeside(this@HomeActivity, split, book, this)
+        }
 
         override fun paneInk(canvas: InkCanvasView?) = paneInk.serve(canvas)
 
@@ -181,6 +193,36 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         paneInk.resume()
+        SplitReturn.take()?.let(::restoreSplit)
+    }
+
+    /**
+     * Back from a screen that took the split screen along: the tab it was
+     * opened from, and what stood in its second half. A note that is gone is
+     * checked for off the main thread, and only when the second half held one.
+     */
+    private fun restoreSplit(back: SplitRestore) {
+        if (!back.needsFiles) {
+            showRestored(back.resolve { true })
+            return
+        }
+        lifecycleScope.launch {
+            val data = DataRoot.repository(this@HomeActivity)
+            val placed = withContext(AppDispatchers.io) {
+                back.resolve { page ->
+                    val path = (page as? PanePage.TypedNote)?.path ?: (page as? PanePage.InkNote)?.path
+                    path != null && runCatching { data.store.exists(path) }.getOrDefault(false)
+                }
+            }
+            showRestored(placed)
+        }
+    }
+
+    private fun showRestored(placed: SplitRestore) {
+        routeChangedAt = 0L
+        route.value = placed.route
+        placed.carry?.let { split.open(it.page, it.swapped) }
+        AppLog.i(TAG, "Back from a screen: ${placed.route}, second half ${placed.carry?.page}")
     }
 
     override fun onPause() {
@@ -209,6 +251,7 @@ class HomeActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // The Home key sends us this. Always land on Home, whole.
         AppLog.i(TAG, "onNewIntent: back to Home")
+        SplitReturn.forget()
         resetToHome()
     }
 
@@ -369,10 +412,23 @@ private fun LauncherHost(
             nextOpensSomething = next?.item?.let { tabOf(it) != null || it.appComponent() != null } ?: true,
             continueTarget = continueTarget,
             onContinue = { target ->
-                when (target) {
-                    is ContinueTarget.Book -> opener.openBook(target.book)
-                    is ContinueTarget.TypedNote -> opener.openTypedNote(target.path)
-                    is ContinueTarget.InkNote -> opener.openInkNote(target.path, target.title)
+                scope.launch {
+                    // The row may be older than the file: a quick note with nothing
+                    // in it is deleted as its screen closes. A gone file is not
+                    // opened, and the row is read again.
+                    val there = withContext(AppDispatchers.io) {
+                        runCatching { DataRoot.repository(context).store.exists(target.path) }.getOrDefault(false)
+                    }
+                    if (!there) {
+                        AppLog.i(TAG, "Continue: ${target.path} is gone. Reading the row again.")
+                        wakeUps++
+                        return@launch
+                    }
+                    when (target) {
+                        is ContinueTarget.Book -> opener.openBook(target.book)
+                        is ContinueTarget.TypedNote -> opener.openTypedNote(target.path)
+                        is ContinueTarget.InkNote -> opener.openInkNote(target.path, target.title)
+                    }
                 }
             },
             onStartNext = {

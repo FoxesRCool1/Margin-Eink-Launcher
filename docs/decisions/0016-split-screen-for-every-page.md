@@ -59,6 +59,22 @@ screen" of decision 0014, which put one note beside a book and nothing else.
 - Typed notes and journal entries now also save on pause. A new activity
   reads the note as it starts, before the old one stops.
 
+## The way back
+
+Home gives its split screen to a note, a book or the Continue row, and lets
+go of it. Back from that screen used to land on a plain Home. Now
+`SplitReturn` (in `ui/split/`) holds a few values in the process. Home says
+which tab was on show. The screen hands its second half back as it pauses
+while closing, but only if it was started with a split screen. Home asks for
+both when it resumes, and shows that tab with that page beside it.
+
+- A page the tab shows too stays in the second half, and Home goes back to
+  Home: one page is never open twice.
+- A note that is gone is not restored. The second half opens on the choice.
+- A split screen closed in the screen stays closed. Home still returns to the
+  tab.
+- The Home key forgets it: it always lands on a plain Home.
+
 ## Another app beside a page
 
 Android 12L and later open an app beside the current one when it is started

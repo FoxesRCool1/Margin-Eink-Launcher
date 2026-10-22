@@ -18,6 +18,7 @@ import io.github.foxesrcool1.margin.ui.split.PanePage
 import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitState
+import io.github.foxesrcool1.margin.ui.split.handSplitBack
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.splitCarry
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
@@ -94,6 +95,7 @@ class NoteEditorActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        handSplitBack(split)
         if (::paneInk.isInitialized) paneInk.pause()
         super.onPause()
     }

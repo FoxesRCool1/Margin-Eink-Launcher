@@ -58,6 +58,7 @@ import io.github.foxesrcool1.margin.ui.split.SplitButton
 import io.github.foxesrcool1.margin.ui.split.SplitLayout
 import io.github.foxesrcool1.margin.ui.split.SplitPane
 import io.github.foxesrcool1.margin.ui.split.SplitState
+import io.github.foxesrcool1.margin.ui.split.handSplitBack
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.splitCarry
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
@@ -249,6 +250,7 @@ class InkNoteActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        handSplitBack(split)
         // The tablet must stop drawing on the glass before another screen shows.
         session?.stop()
         // Saved here and not in onStop. The screen that opened this one

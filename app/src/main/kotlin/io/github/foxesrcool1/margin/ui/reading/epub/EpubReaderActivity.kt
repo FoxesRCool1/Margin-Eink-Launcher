@@ -28,6 +28,7 @@ import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.reading.BookAnnotations
 import io.github.foxesrcool1.margin.core.reading.Highlight
 import io.github.foxesrcool1.margin.core.reading.ReadingLog
+import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.reading.ReadingRepository
 import io.github.foxesrcool1.margin.core.reading.ReadingTimer
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
@@ -42,6 +43,7 @@ import io.github.foxesrcool1.margin.ui.split.PaneInk
 import io.github.foxesrcool1.margin.ui.split.PanePage
 import io.github.foxesrcool1.margin.ui.split.SplitState
 import io.github.foxesrcool1.margin.ui.split.SplitViewLayout
+import io.github.foxesrcool1.margin.ui.split.handSplitBack
 import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.splitCarry
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
@@ -470,7 +472,7 @@ class EpubReaderActivity : FragmentActivity() {
         val progress = locator.locations.totalProgression ?: 0.0
         val position = locator.locations.position
         ui.placeLabel = buildString {
-            append("${(progress * 100).toInt()} %")
+            append(ReadingProgress.mark(progress) ?: "0%")
             if (position != null) append("  .  position $position")
             locator.title?.takeIf { it.isNotBlank() }?.let { append("  .  ").append(it) }
         }
@@ -687,6 +689,7 @@ class EpubReaderActivity : FragmentActivity() {
     }
 
     override fun onPause() {
+        handSplitBack(split)
         // The tablet must stop drawing on the glass before another screen shows.
         if (::paneInk.isInitialized) paneInk.pause()
         timer.pause(nowSeconds())

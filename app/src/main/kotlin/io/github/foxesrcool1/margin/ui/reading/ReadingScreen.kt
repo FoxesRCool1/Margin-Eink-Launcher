@@ -3,7 +3,6 @@ package io.github.foxesrcool1.margin.ui.reading
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import kotlin.math.roundToInt
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.reading.ReadingLog
+import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.reading.ReadingRepository
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
@@ -278,7 +278,7 @@ private fun BookRow(
                     )
                 }
             }
-            val mark = progressMark(progress)
+            val mark = ReadingProgress.mark(progress)
             if (mark != null) {
                 CapsLabel(
                     text = mark,
@@ -289,13 +289,6 @@ private fun BookRow(
         }
     }
     HairlineDivider(color = EinkColors.Faded)
-}
-
-/** The small mark at the right end of a library row: "12%", "Done" at 100%, nothing for a book not started. */
-internal fun progressMark(progress: Double): String? {
-    if (progress <= 0.0) return null
-    val percent = (progress * 100).roundToInt()
-    return if (percent >= 100) "Done" else "${percent.coerceAtLeast(1)}%"
 }
 
 /** A screen of its own for the book, and the split screen, if one is open, goes along. See [PageOpener]. */
