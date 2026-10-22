@@ -1,5 +1,16 @@
 # Release notes
 
+## 1.1.0
+
+- The screen no longer stops for a moment: calls to the tablet, and leaving a handwritten note, happen in the background. A second tap on a row is no longer ignored
+- Home: a big clock, a Continue line back to your last book or note, and the routine item for this part of the day. Tap Wi-Fi to open the internet panel
+- Settings is four tabs with short rows: Screen, Pen, Files, About
+- Write: long notes turn a page at a time. Quick notes you leave empty are not kept
+- Journal: a daily word goal if you want one, and habits tick the day on show
+- Icons are drawn the Lucide way, crisp at every size
+- The split screen comes back after Back. Back inside a folder goes up one level
+- Safer files: a file that cannot be read is never written over, and notes in the reader, highlights and PDF ink are no longer lost
+
 ## 1.0.1
 
 - Read: "Sort by last read" puts the book you read last on top. It sorted by the day a book was added
