@@ -1,4 +1,4 @@
-# 0023. A big clock, Continue, and parts of the day
+# 0024. A big clock, Continue, and parts of the day
 
 Date: 2026-10-22. The owner wanted a launcher that is calm and pleasant to
 use every day, in the spirit of Prose: a sheet of paper, a way back to what
