@@ -92,74 +92,92 @@ class InkRenderer {
     }
 
     fun drawStroke(canvas: Canvas, stroke: InkStroke) {
-        drawRange(
-            canvas, stroke.tool, stroke.width, stroke.pointCount, 0, stroke.pointCount - 1,
-            { stroke.xs[it] }, { stroke.ys[it] }, { stroke.pressures[it] },
-        )
+        drawPoints(canvas, stroke.tool, stroke.width, stroke.xs, stroke.ys, stroke.pressures, stroke.pointCount)
     }
 
-    /** Paints the part of a stroke in progress from point [from] to point [to]. */
-    fun drawLive(canvas: Canvas, builder: InkStrokeBuilder, from: Int, to: Int) {
-        drawRange(
-            canvas, builder.tool, builder.width, builder.size, from, to,
-            builder::x, builder::y, builder::pressure,
-        )
+    /** Paints a stroke that is still being written, exactly as [drawStroke] will paint it once it is done. */
+    fun drawLive(canvas: Canvas, builder: InkStrokeBuilder) {
+        drawPoints(canvas, builder.tool, builder.width, builder.xs, builder.ys, builder.pressures, builder.size)
     }
 
-    private inline fun drawRange(
+    /**
+     * The line does not go straight from point to point. It curves through the
+     * middle of each pair of points, with the point itself as the bend. A pen
+     * that moves fast leaves points far apart, and straight pieces between
+     * them turn a round letter into a polygon.
+     *
+     * Piece j belongs to point j: it runs from the middle before that point to
+     * the middle after it. The first piece starts at the first point and the
+     * last piece ends at the last point, so the line ends where the pen did.
+     */
+    private fun drawPoints(
         canvas: Canvas,
         tool: InkTool,
         width: Float,
+        xs: FloatArray,
+        ys: FloatArray,
+        pressures: FloatArray,
         count: Int,
-        from: Int,
-        to: Int,
-        x: (Int) -> Float,
-        y: (Int) -> Float,
-        pressure: (Int) -> Float,
     ) {
-        if (count == 0 || to < from) return
+        if (count == 0) return
 
         if (count == 1) {
             // A tap of the pen: a dot.
             if (tool == InkTool.Pen) {
-                canvas.drawCircle(x(0), y(0), penWidth(width, pressure(0)) / 2f, dotPaint)
+                canvas.drawCircle(xs[0], ys[0], penWidth(width, pressures[0]) / 2f, dotPaint)
             } else {
                 highlighterPaint.strokeWidth = width
-                canvas.drawPoint(x(0), y(0), highlighterPaint)
+                canvas.drawPoint(xs[0], ys[0], highlighterPaint)
             }
             return
         }
 
         if (tool == InkTool.Highlighter) {
             path.rewind()
-            path.moveTo(x(from), y(from))
-            for (index in from + 1..to) path.lineTo(x(index), y(index))
+            path.moveTo(xs[0], ys[0])
+            for (index in 0 until count) addPiece(xs, ys, count, index)
             highlighterPaint.strokeWidth = width
             canvas.drawPath(path, highlighterPaint)
             return
         }
 
-        // The width changes along a pen stroke. One draw call per segment is
+        // The width changes along a pen stroke. One draw call per piece is
         // slow on a page of 100 000 points, so neighbours of nearly the same
         // width go into one path.
         var runWidth = -1f
         path.rewind()
-        for (index in from until to) {
-            val segmentWidth = quantise((penWidth(width, pressure(index)) + penWidth(width, pressure(index + 1))) / 2f)
-            if (abs(segmentWidth - runWidth) > 0.001f) {
+        for (index in 0 until count) {
+            val pieceWidth = quantise(penWidth(width, pressures[index]))
+            if (abs(pieceWidth - runWidth) > 0.001f) {
                 if (runWidth > 0f) {
                     penPaint.strokeWidth = runWidth
                     canvas.drawPath(path, penPaint)
                 }
                 path.rewind()
-                path.moveTo(x(index), y(index))
-                runWidth = segmentWidth
+                if (index == 0) {
+                    path.moveTo(xs[0], ys[0])
+                } else {
+                    path.moveTo((xs[index - 1] + xs[index]) / 2f, (ys[index - 1] + ys[index]) / 2f)
+                }
+                runWidth = pieceWidth
             }
-            path.lineTo(x(index + 1), y(index + 1))
+            addPiece(xs, ys, count, index)
         }
         if (runWidth > 0f) {
             penPaint.strokeWidth = runWidth
             canvas.drawPath(path, penPaint)
+        }
+    }
+
+    /** Adds piece [index] to [path], which already stands where that piece starts. */
+    private fun addPiece(xs: FloatArray, ys: FloatArray, count: Int, index: Int) {
+        when (index) {
+            0 -> path.lineTo((xs[0] + xs[1]) / 2f, (ys[0] + ys[1]) / 2f)
+            count - 1 -> path.lineTo(xs[index], ys[index])
+            else -> path.quadTo(
+                xs[index], ys[index],
+                (xs[index] + xs[index + 1]) / 2f, (ys[index] + ys[index + 1]) / 2f,
+            )
         }
     }
 

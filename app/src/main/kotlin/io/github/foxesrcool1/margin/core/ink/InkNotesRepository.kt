@@ -39,6 +39,8 @@ class InkNotesRepository(private val data: DataRepository) {
     }
 
     /** When the file was last written. A different value than before means someone wrote it. 0 for a file that is not there. */
+    fun exists(path: String): Boolean = data.store.exists(path)
+
     fun stampOf(path: String): Long = data.store.lastModified(path)
 
     fun save(path: String, note: InkNote): Boolean {
@@ -53,6 +55,14 @@ class InkNotesRepository(private val data: DataRepository) {
         val path = data.freePath(RelativePaths.join(folderPath, name))
         return if (save(path, InkNote(template = template))) path else null
     }
+
+    /**
+     * A free path for a new note, with no file made. The note is written the
+     * first time there is ink on it, so a page opened and left blank leaves
+     * nothing behind.
+     */
+    fun freshPath(folderPath: String, title: String): String =
+        data.freePath(RelativePaths.join(folderPath, "${StorageLayout.safeName(title)}.${StorageLayout.INK_NOTE_EXTENSION}"))
 
     /** Writes an export and returns where it went, or null. */
     fun writeExport(fileName: String, bytes: ByteArray): String? {

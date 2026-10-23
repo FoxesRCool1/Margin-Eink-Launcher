@@ -34,9 +34,13 @@ enum class InkMode { Pen, Highlighter, Eraser }
  *
  * How it keeps the e-ink panel calm:
  *
- * - Finished ink lives in one bitmap. `onDraw` is a single bitmap copy.
- * - While the pen is down, only the newest piece of the line is painted into
- *   that bitmap, and only the small box around it is handed to the panel.
+ * - Finished ink lives in one bitmap. `onDraw` copies it and draws the
+ *   stroke the pen is writing on top, as lines.
+ * - The bitmap does not change while the pen is down. A changed bitmap goes
+ *   to the graphics chip whole, about 11 MB on this panel, before the next
+ *   frame can show, and that wait sat between the pen and the ink. The
+ *   stroke goes into the bitmap once, when the pen lifts, painted by the
+ *   same code, so nothing moves on the glass.
  * - Undo, redo and the eraser repaint only the box around the strokes that
  *   changed.
  *
@@ -118,7 +122,6 @@ class InkCanvasView(context: Context) : View(context) {
     private var offsetY = 0f
 
     private var builder: InkStrokeBuilder? = null
-    private var paintedUpTo = 0
     private var erasingNow = false
     private var lastReportedErasing: Boolean? = null
     private var lastPageX = 0f
@@ -238,6 +241,14 @@ class InkCanvasView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         cache?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        val live = builder ?: return
+        if (deviceDrawsLive || erasingNow) return
+        canvas.save()
+        canvas.translate(offsetX, offsetY)
+        canvas.scale(scale, scale)
+        viewport?.let { canvas.clipRect(it) }
+        renderer.drawLive(canvas, live)
+        canvas.restore()
     }
 
     // -- Painting into the cache -----------------------------------------------
@@ -357,7 +368,7 @@ class InkCanvasView(context: Context) : View(context) {
                     builder = InkStrokeBuilder(tool, width).also {
                         it.add(lastPageX, lastPageY, event.pressure)
                     }
-                    paintedUpTo = 0
+                    if (!deviceDrawsLive) invalidate()
                 }
             }
 
@@ -366,21 +377,20 @@ class InkCanvasView(context: Context) : View(context) {
                     penMovedTo(event.getHistoricalX(index), event.getHistoricalY(index), event.getHistoricalPressure(index))
                 }
                 penMovedTo(event.x, event.y, event.pressure)
-                paintNewPieces()
+                if (builder != null && !deviceDrawsLive) invalidate()
             }
 
             MotionEvent.ACTION_UP -> {
                 penMovedTo(event.x, event.y, event.pressure)
-                paintNewPieces()
                 finishStroke()
             }
 
             MotionEvent.ACTION_CANCEL -> {
-                // The system took the gesture away. What was painted so far
-                // has to come off the glass again.
-                val abandoned = builder?.build()
+                // The system took the gesture away. The stroke was only ever
+                // drawn on top of the bitmap, so dropping it takes it off the glass.
+                val abandoned = builder
                 builder = null
-                if (abandoned != null && !deviceDrawsLive) rebuildAround(listOf(abandoned))
+                if (abandoned != null && !deviceDrawsLive) invalidate()
                 if (deviceDrawsLive) schedulePayOwed()
             }
         }
@@ -399,40 +409,6 @@ class InkCanvasView(context: Context) : View(context) {
         lastPageY = y
     }
 
-    private fun paintNewPieces() {
-        val current = builder ?: return
-        if (deviceDrawsLive) return
-        val last = current.size - 1
-        if (last <= paintedUpTo) return
-        val target = cacheCanvas ?: return
-
-        var left = Float.MAX_VALUE
-        var top = Float.MAX_VALUE
-        var right = -Float.MAX_VALUE
-        var bottom = -Float.MAX_VALUE
-        for (index in paintedUpTo..last) {
-            left = min(left, current.x(index))
-            right = max(right, current.x(index))
-            top = min(top, current.y(index))
-            bottom = max(bottom, current.y(index))
-        }
-
-        target.save()
-        target.translate(offsetX, offsetY)
-        target.scale(scale, scale)
-        renderer.drawLive(target, current, paintedUpTo, last)
-        target.restore()
-        paintedUpTo = last
-
-        val reach = current.width / 2f + 2f
-        invalidate(
-            floor((left - reach) * scale + offsetX).toInt() - 1,
-            floor((top - reach) * scale + offsetY).toInt() - 1,
-            ceil((right + reach) * scale + offsetX).toInt() + 1,
-            ceil((bottom + reach) * scale + offsetY).toInt() + 1,
-        )
-    }
-
     private fun finishStroke() {
         val current = builder
         builder = null
@@ -442,13 +418,11 @@ class InkCanvasView(context: Context) : View(context) {
         }
         val stroke = current?.build() ?: return
         editor.add(stroke)
-        when {
-            deviceDrawsLive -> {
-                owedStrokes += stroke
-                schedulePayOwed()
-            }
-            // A dot was never painted live, because one point makes no piece.
-            stroke.pointCount == 1 -> rebuildAround(listOf(stroke))
+        if (deviceDrawsLive) {
+            owedStrokes += stroke
+            schedulePayOwed()
+        } else {
+            paintOnTop(listOf(stroke))
         }
         onInkChanged?.invoke()
     }
@@ -486,34 +460,40 @@ class InkCanvasView(context: Context) : View(context) {
 
     /** The pen has been up long enough. Paint what the tablet painted for us, for real. */
     private fun paintOwed() {
-        if (builder != null) return
-        val target = cacheCanvas ?: return
+        if (builder != null || cacheCanvas == null) return
         if (!owedBox.isEmpty) {
             rebuildPageBox(RectF(owedBox))
             owedBox.setEmpty()
         }
         if (owedStrokes.isNotEmpty()) {
-            target.save()
-            target.translate(offsetX, offsetY)
-            target.scale(scale, scale)
-            renderer.drawStrokes(target, owedStrokes)
-            target.restore()
-            val box = RectF(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
-            owedStrokes.forEach { stroke ->
-                val reach = stroke.width / 2f + 2f
-                box.left = min(box.left, stroke.minX - reach)
-                box.top = min(box.top, stroke.minY - reach)
-                box.right = max(box.right, stroke.maxX + reach)
-                box.bottom = max(box.bottom, stroke.maxY + reach)
-            }
+            paintOnTop(owedStrokes)
             owedStrokes.clear()
-            invalidate(
-                floor(box.left * scale + offsetX).toInt() - 1,
-                floor(box.top * scale + offsetY).toInt() - 1,
-                ceil(box.right * scale + offsetX).toInt() + 1,
-                ceil(box.bottom * scale + offsetY).toInt() + 1,
-            )
         }
+    }
+
+    /** Paints new strokes over what the bitmap already holds. */
+    private fun paintOnTop(strokes: List<InkStroke>) {
+        val target = cacheCanvas ?: return
+        target.save()
+        target.translate(offsetX, offsetY)
+        target.scale(scale, scale)
+        viewport?.let { target.clipRect(it) }
+        renderer.drawStrokes(target, strokes)
+        target.restore()
+        val box = RectF(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        strokes.forEach { stroke ->
+            val reach = stroke.width / 2f + 2f
+            box.left = min(box.left, stroke.minX - reach)
+            box.top = min(box.top, stroke.minY - reach)
+            box.right = max(box.right, stroke.maxX + reach)
+            box.bottom = max(box.bottom, stroke.maxY + reach)
+        }
+        invalidate(
+            floor(box.left * scale + offsetX).toInt() - 1,
+            floor(box.top * scale + offsetY).toInt() - 1,
+            ceil(box.right * scale + offsetX).toInt() + 1,
+            ceil(box.bottom * scale + offsetY).toInt() + 1,
+        )
     }
 
     /** Paints anything still owed right now. Call before a page turn or a save of the preview. */
@@ -575,6 +555,11 @@ object PenWidths {
     const val BOLD = 8f
 
     val all: List<Float> = listOf(FINE, MEDIUM, BOLD)
+
+    /** A stored width, or Medium if it is not one of the three. */
+    fun clean(width: Float): Float = if (width in all) width else MEDIUM
+
+    fun next(width: Float): Float = all[(all.indexOf(clean(width)) + 1) % all.size]
 
     fun label(width: Float): String = when (width) {
         FINE -> "Fine"

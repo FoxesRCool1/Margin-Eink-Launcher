@@ -91,9 +91,13 @@ class InkStroke(
 
 /** Collects the points of a stroke while the pen is down. */
 class InkStrokeBuilder(val tool: InkTool, val width: Float) {
-    private var xs = FloatArray(64)
-    private var ys = FloatArray(64)
-    private var pressures = FloatArray(64)
+    /** Only the first [size] values count. Read them, never write them. */
+    var xs = FloatArray(64)
+        private set
+    var ys = FloatArray(64)
+        private set
+    var pressures = FloatArray(64)
+        private set
 
     var size: Int = 0
         private set
@@ -108,20 +112,23 @@ class InkStrokeBuilder(val tool: InkTool, val width: Float) {
         }
         xs[size] = x
         ys[size] = y
-        pressures[size] = pressure.coerceIn(0f, 1f)
+        // The pressure the digitiser reports jitters from point to point, and
+        // the width of the line would jitter with it. Each point moves only
+        // part of the way to the new reading.
+        val reading = pressure.coerceIn(0f, 1f)
+        pressures[size] = if (size == 0) reading else pressures[size - 1] + (reading - pressures[size - 1]) * PRESSURE_FOLLOW
         size++
     }
-
-    fun x(index: Int): Float = xs[index]
-
-    fun y(index: Int): Float = ys[index]
-
-    fun pressure(index: Int): Float = pressures[index]
 
     /** Null when the pen never really touched down. */
     fun build(): InkStroke? =
         if (size == 0) null
         else InkStroke(tool, width, xs.copyOf(size), ys.copyOf(size), pressures.copyOf(size))
+
+    private companion object {
+        /** How far a point moves from the last pressure to the new reading. 1 would follow every jitter. */
+        const val PRESSURE_FOLLOW = 0.5f
+    }
 }
 
 /** What is printed on the page under the ink. */

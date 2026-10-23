@@ -92,6 +92,7 @@ class InkNoteActivity : ComponentActivity() {
     private var paneCanvas: InkCanvasView? = null
     private var fastPenMode = SettingsStore.FAST_PEN_OFF
     private var redrawDelay = SettingsStore.DEFAULT_INK_DELAY_MILLIS
+    private var penWidth = PenWidths.MEDIUM
     private var mainPage: PanePage? = null
     private val split = SplitState(mainPage = { mainPage })
 
@@ -151,6 +152,7 @@ class InkNoteActivity : ComponentActivity() {
                                 title = title,
                                 controller = made,
                                 problem = ready.problem,
+                                startWidth = penWidth,
                                 onCanvas = { view ->
                                     // A new canvas: the split screen or a turn
                                     // made the page change its layout. The
@@ -168,7 +170,11 @@ class InkNoteActivity : ComponentActivity() {
                                     view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> startFastPen() }
                                 },
                                 onDialog = { open -> if (open) session?.stop() else startFastPen() },
-                                onWidth = { session?.applyWidth(it) },
+                                onWidth = {
+                                    penWidth = it
+                                    session?.applyWidth(it)
+                                    lifecycleScope.launch { SettingsStore(this@InkNoteActivity).setPenWidth(it) }
+                                },
                                 onExport = { asPdf -> export(made, ready.repository, title.ifBlank { "note" }, asPdf) },
                                 onClose = { finish() },
                             )
@@ -183,6 +189,7 @@ class InkNoteActivity : ComponentActivity() {
             val settings = SettingsStore(this@InkNoteActivity)
             fastPenMode = settings.fastPenMode.first()
             redrawDelay = settings.inkRedrawDelayMillis.first()
+            penWidth = PenWidths.clean(settings.penWidth.first())
 
             val repository = InkNotesRepository(DataRoot.repository(this@InkNoteActivity))
             val started = System.currentTimeMillis()
@@ -304,6 +311,7 @@ internal fun InkNoteScreen(
     title: String,
     controller: InkNoteController,
     problem: String?,
+    startWidth: Float = PenWidths.MEDIUM,
     onCanvas: (InkCanvasView) -> Unit,
     onDialog: (open: Boolean) -> Unit,
     onWidth: (Float) -> Unit,
@@ -312,7 +320,7 @@ internal fun InkNoteScreen(
 ) {
     var canvas by remember { mutableStateOf<InkCanvasView?>(null) }
     var mode by remember { mutableStateOf(InkMode.Pen) }
-    var width by remember { mutableFloatStateOf(PenWidths.MEDIUM) }
+    var width by remember { mutableFloatStateOf(startWidth) }
     var pageIndex by remember { mutableIntStateOf(controller.pageIndex) }
     var pageCount by remember { mutableIntStateOf(controller.pageCount) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -341,7 +349,7 @@ internal fun InkNoteScreen(
         PenWidthButton(
             width = width,
             onNext = {
-                width = PenWidths.all[(PenWidths.all.indexOf(width) + 1) % PenWidths.all.size]
+                width = PenWidths.next(width)
                 canvas?.penWidth = width
                 onWidth(width)
             },
@@ -351,15 +359,20 @@ internal fun InkNoteScreen(
     }
     val pageTools: @Composable () -> Unit = {
         IconPressButton(icon = Lucide.ChevronLeft, label = "Previous page", enabled = pageIndex > 0, onClick = { turn(-1) })
-        IconPressButton(icon = Lucide.ChevronRight, label = "Next page", enabled = pageIndex < pageCount - 1, onClick = { turn(1) })
-        IconPressButton(
-            icon = Lucide.FilePlus,
-            label = "Add a page",
-            onClick = {
-                controller.addPage()
-                refreshPages()
-            },
-        )
+        // On the last page the next page is a new one, as in a paper
+        // notebook. One button less, and the pen hand never hunts for "add".
+        if (pageIndex < pageCount - 1) {
+            IconPressButton(icon = Lucide.ChevronRight, label = "Next page", onClick = { turn(1) })
+        } else {
+            IconPressButton(
+                icon = Lucide.FilePlus,
+                label = "Add a page",
+                onClick = {
+                    controller.addPage()
+                    refreshPages()
+                },
+            )
+        }
         IconPressButton(
             icon = Lucide.Ellipsis,
             label = "More",
@@ -374,6 +387,10 @@ internal fun InkNoteScreen(
             modifier = pageModifier,
             factory = { context ->
                 InkCanvasView(context).also { view ->
+                    // A turn or the split screen can make a new canvas. It
+                    // takes the tool and width in use, not the defaults.
+                    view.mode = mode
+                    view.penWidth = width
                     view.onPageSwipe = { direction -> turn(direction) }
                     canvas = view
                     onCanvas(view)

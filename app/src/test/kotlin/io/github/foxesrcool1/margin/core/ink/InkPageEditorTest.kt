@@ -131,7 +131,18 @@ class InkPageEditorTest {
         builder.add(2f, 1f, 7f)
         val stroke = builder.build()!!
         assertEquals(2, stroke.pointCount)
-        assertEquals(1f, stroke.pressures[1], 0f)
+        // The reading of 7 is held to 1, and the pressure moves half way to it.
+        assertEquals(0.75f, stroke.pressures[1], 0f)
+    }
+
+    @Test
+    fun `pressure follows the pen smoothly, not every jitter`() {
+        val builder = InkStrokeBuilder(InkTool.Pen, 5f)
+        listOf(0.5f, 0.9f, 0.1f, 0.9f, 0.1f).forEachIndexed { index, reading -> builder.add(index.toFloat(), 0f, reading) }
+        val pressures = builder.build()!!.pressures
+        val jumps = (1 until pressures.size).map { kotlin.math.abs(pressures[it] - pressures[it - 1]) }
+        assertTrue("jumps $jumps", jumps.all { it <= 0.41f })
+        assertEquals(0.5f, pressures[0], 0f)
     }
 
     @Test

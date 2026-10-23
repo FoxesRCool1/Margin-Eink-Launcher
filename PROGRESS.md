@@ -4,6 +4,59 @@ One section per step. Newest step at the top.
 
 ---
 
+## The pen pass: a smoother line, less delay, fewer taps
+
+Date: 2026-10-23. Branch `Dev`. The owner asked for the app to be more
+pleasant, cleaner and fast, with the pen writing as the most important part,
+and for a cleaner README. Decision 0028.
+
+### What was done
+
+1. **Less delay between the pen and the ink.** The stroke being written is
+   drawn on top of the page, and goes into the page bitmap once, when the pen
+   lifts. Before, every pen frame changed the 11 MB page bitmap, which
+   Android then copied whole to the graphics chip.
+2. **A smoother line.** The line curves through the points instead of going
+   straight from one to the next, so fast round letters stay round. Old
+   notes get it too. The pressure no longer jitters the width.
+3. **The pen width is remembered** for the next note and the PDF reader. A
+   turn of the screen keeps the tool and the width in use.
+4. **Next on the last page adds a page.** One button less in the note
+   toolbar.
+5. **Home: "Quick handwritten page".** One tap, a blank page. Nothing is kept
+   if it stays blank.
+6. **The README is shorter and clearer.**
+
+### What works
+
+- All unit and screenshot tests, lint, the debug build. A run in the emulator: the open stroke and the finished one draw as smooth curves, a blank quick page leaves no file, 1500 monkey events with no crash. New tests: the open
+  stroke shows before the pen lifts and goes on a cancel, a curve bends
+  through its corners and ends where the pen lifted, the pressure is steady,
+  a blank new note stays unwritten even after "Add a page" or a template.
+
+### What does not work yet, or is not known
+
+- Nothing here has run on the tablet. How much less delay there is shows
+  only on the glass.
+- With Fast 1 or Fast 2 the tablet draws the line itself. The curve then
+  shows when the stroke is painted for real, after the redraw delay.
+
+### Device test list
+
+1. Settings, Pen, Pen Mode Normal. Open a note and write a line of fast
+   round letters (o, a, e). The line follows the pen with less delay than in
+   1.1.0, and the letters are round, not cornered.
+2. Write with a light hand and a heavy hand. The width changes smoothly.
+3. Pick Bold, close the note, open another one. It starts with Bold. Open a
+   PDF, More: the pen width is Bold there too.
+4. In a note, pick the eraser, turn the screen. The eraser is still picked.
+5. Go to the last page. The right arrow is now "Add a page". Tap it.
+6. Home: tap the signature icon at the bottom. A blank page opens. Close it
+   without writing: nothing new is in Write, quick. Open it again, write,
+   close: the note is there.
+
+---
+
 ## The open items after round 3: keyboard, notes, labels, selection
 
 Date: 2026-10-22. Branch `Dev`.

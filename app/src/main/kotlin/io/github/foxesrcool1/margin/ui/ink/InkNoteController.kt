@@ -201,11 +201,16 @@ class InkNoteController(
         val width = pageWidth
         val height = pageHeight
         val mine = ++saveCount
+        // A quick page has no file until there is ink. A page added or a
+        // template picked on a blank one must not make one either.
+        val blank = frozen.all { it.strokes.isEmpty() }
+        fun nothingToKeep() = blank && !repository.exists(path)
 
         // First the strokes, with the previews the pages have now. This is the
         // part the screen waits for when it goes away.
         lastWrite = saver.submit {
             runCatching {
+                if (nothingToKeep()) return@runCatching
                 val started = System.currentTimeMillis()
                 val data = frozen.map { InkPageData(it.strokes, it.preview) }
                 val ok = repository.save(path, InkNote(width, height, template, data))
@@ -226,7 +231,7 @@ class InkNoteController(
         saver.execute {
             runCatching {
                 // A newer save is queued and will render these pages itself.
-                if (mine != saveCount || frozen.none { it.stale }) return@runCatching
+                if (mine != saveCount || frozen.none { it.stale } || nothingToKeep()) return@runCatching
                 val scene = InkNote(width, height, template)
                 val fresh = frozen.map {
                     if (it.stale) InkExport.pagePng(scene, InkPageData(it.strokes), InkExport.PREVIEW_SCALE) else it.preview

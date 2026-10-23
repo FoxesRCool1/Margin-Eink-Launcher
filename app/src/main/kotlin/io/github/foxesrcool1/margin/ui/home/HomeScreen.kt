@@ -91,6 +91,8 @@ fun HomeScreen(
     onOpenTab: (LauncherRoute) -> Unit,
     onOpenSettings: () -> Unit,
     onQuickNote: () -> Unit = {},
+    /** A blank handwritten page, at once. */
+    onQuickInk: () -> Unit = {},
     nextRoutineLabel: String? = null,
     /** When in the day the next item belongs. Any Time reads "Next", the others "This Evening" and so on. */
     nextRoutinePart: PartOfDay = PartOfDay.AnyTime,
@@ -242,6 +244,11 @@ fun HomeScreen(
                         onWifi = onWifi,
                         onClick = { openInternetPanel(context) },
                     )
+                }
+                // A narrow half has no room for both, and the status needs its own.
+                if (!compact) {
+                    IconPressButton(icon = Lucide.Signature, label = "Quick handwritten page", onClick = onQuickInk)
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
                 IconPressButton(icon = Lucide.SquarePen, label = "Quick note", onClick = onQuickNote)
                 Spacer(modifier = Modifier.width(4.dp))

@@ -7,7 +7,7 @@ added the same day by the session that built the in-app update, and section
 2e came with the second and third lists, on 2026-09-22, and 2f with the open
 source pass the same day. Section 2g came with 1.0.0 and the release key,
 and 2h with a pass over the app on 2026-09-23. Section 2i came with
-the big pass of 2026-10-22.
+the big pass of 2026-10-22, and 2j with the pen pass of 2026-10-23.
 
 Read `CLAUDE.md` first for the rules, then this file for the state.
 
@@ -265,6 +265,24 @@ session must know:
 - None of this has run on the tablet. The device test lists are in
   `PROGRESS.md`.
 
+### 2j. The pen pass of 2026-10-23
+
+The owner asked for the pen writing to be the best part of the app, and for
+a cleaner README. Released as 1.2.0 at the owner's word, before any tablet
+test. `PROGRESS.md`, top section, and decision 0028. What a new session must
+know:
+
+- **The open stroke is drawn in `onDraw`, on top of the page bitmap.** It
+  goes into the bitmap once, at pen-up. Do not go back to painting pieces
+  into the bitmap while the pen is down: every change re-sends the whole
+  bitmap to the graphics chip.
+- **`InkRenderer` draws curves through the midpoints of the points.** The
+  screen, the previews and both exports use it, so they still match. The
+  stored points are raw. The pressure is steadied when it is recorded.
+- **The pen width lives in `SettingsStore.penWidth`.** `PenWidths.clean`
+  turns a stored value into one of the three widths.
+- **A quick handwritten page has no file until there is ink.**
+  `InkNotesRepository.freshPath` gives the name only.
 
 ---
 

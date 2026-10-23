@@ -211,6 +211,8 @@ class PdfReaderActivity : ComponentActivity() {
             val settings = SettingsStore(this@PdfReaderActivity)
             fastPenMode = settings.fastPenMode.first()
             redrawDelay = settings.inkRedrawDelayMillis.first()
+            ui.penWidth = PenWidths.clean(settings.penWidth.first())
+            canvas?.penWidth = ui.penWidth
             refreshEvery = settings.reader.first().refreshEveryPages
             worker.execute { openBook() }
         }
@@ -435,6 +437,8 @@ class PdfReaderActivity : ComponentActivity() {
                 }
             }
             this@PdfReaderActivity.canvas = canvas
+            canvas.penWidth = ui.penWidth
+            canvas.mode = ui.mode
             // On the emulator the mouse starts as a finger here, so a click
             // turns the page. The toolbar has a switch to make it draw.
             canvas.fingerDraws = ui.mouseDraws
@@ -491,10 +495,11 @@ class PdfReaderActivity : ComponentActivity() {
         }
 
         override fun nextPenWidth() {
-            val next = PenWidths.all[(PenWidths.all.indexOf(ui.penWidth) + 1) % PenWidths.all.size]
+            val next = PenWidths.next(ui.penWidth)
             ui.penWidth = next
             canvas?.penWidth = next
             session?.applyWidth(next)
+            lifecycleScope.launch { SettingsStore(this@PdfReaderActivity).setPenWidth(next) }
         }
 
         override fun undo() {

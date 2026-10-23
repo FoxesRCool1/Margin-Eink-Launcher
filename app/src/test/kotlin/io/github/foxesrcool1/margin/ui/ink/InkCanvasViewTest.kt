@@ -75,6 +75,30 @@ class InkCanvasViewTest {
     }
 
     @Test
+    fun `the line shows while the pen is down, and a cancel takes it off`() {
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, 200f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, 300f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        assertEquals("drawn on top before the pen lifts", Color.BLACK, pixel(200, 100))
+        assertEquals(0, view.editor.strokeCount)
+
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_CANCEL, 300f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        assertEquals(0, view.editor.strokeCount)
+        assertEquals(Color.WHITE, pixel(200, 100))
+    }
+
+    @Test
+    fun `a curve passes through the middle of its corners, not the corners`() {
+        // Three points make a sharp corner at (200, 100). The line bends
+        // through it on a curve, so the corner pixel itself stays white.
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 200f, 200f to 100f, 300f to 200f)
+        assertEquals(Color.WHITE, pixel(200, 100))
+        // The bend is half way between the corner and the middle of its sides.
+        assertNotEquals(Color.WHITE, pixel(200, 125))
+        assertNotEquals("the line still ends where the pen lifted", Color.WHITE, pixel(299, 199))
+    }
+
+    @Test
     fun `a finger never draws`() {
         drag(MotionEvent.TOOL_TYPE_FINGER, 100f to 100f, 300f to 100f)
         assertEquals(0, view.editor.strokeCount)

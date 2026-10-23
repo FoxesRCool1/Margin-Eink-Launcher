@@ -145,6 +145,13 @@ class SettingsStore(context: Context) {
         }
     }
 
+    /** The pen width the handwriting screens start with: the last one picked. */
+    val penWidth: Flow<Float> = store.data.map { it[KEY_PEN_WIDTH] ?: DEFAULT_PEN_WIDTH }
+
+    suspend fun setPenWidth(width: Float) {
+        store.edit { it[KEY_PEN_WIDTH] = width }
+    }
+
     /** Words to write in the journal each day. Zero is Off. */
     val journalGoal: Flow<Int> = store.data.map { prefs ->
         JournalGoal.clean(prefs[KEY_JOURNAL_GOAL] ?: 0)
@@ -164,6 +171,10 @@ class SettingsStore(context: Context) {
         private val KEY_READER_REFRESH = androidx.datastore.preferences.core.intPreferencesKey("reader_refresh_every")
         private val KEY_READER_GOAL = androidx.datastore.preferences.core.intPreferencesKey("reader_goal_minutes")
         private val KEY_JOURNAL_GOAL = androidx.datastore.preferences.core.intPreferencesKey("journal_goal_words")
+        private val KEY_PEN_WIDTH = androidx.datastore.preferences.core.floatPreferencesKey("pen_width")
+
+        /** The middle of the three widths in `PenWidths`. */
+        const val DEFAULT_PEN_WIDTH = 5f
 
         const val FAST_PEN_OFF = "off"
         const val FAST_PEN_WRITING = "writing"

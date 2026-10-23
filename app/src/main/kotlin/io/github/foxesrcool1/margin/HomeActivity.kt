@@ -186,6 +186,7 @@ class HomeActivity : ComponentActivity() {
                                 onOpenNote = opener::openTypedNote,
                                 onOpenInkNote = { path, title -> opener.openInkNote(path, title) },
                                 onQuickNote = { quickNote() },
+                                onQuickInk = { quickInkNote() },
                                 onBackAtHome = split::backAtHome,
                                 newNoteRequests = newNoteRequests.intValue,
                                 takeNewNoteRequest = { newNoteWanted.also { newNoteWanted = false } },
@@ -317,6 +318,24 @@ class HomeActivity : ComponentActivity() {
         }
     }
 
+    private fun quickInkNote() {
+        val data = DataRoot.repository(this)
+        kotlin.concurrent.thread(name = "eink-quick-ink", isDaemon = true) {
+            val name = "Handwritten " + java.time.LocalDateTime.now().withNano(0).toString().replace(':', '-')
+            val path = runCatching {
+                io.github.foxesrcool1.margin.core.ink.InkNotesRepository(data)
+                    .freshPath(NotesRepository(data).quickNotePath(), name)
+            }.getOrNull()
+            runOnUiThread {
+                if (path != null) {
+                    opener.openInkNote(path, name)
+                } else {
+                    AppLog.e(TAG, "Could not make a quick handwritten page")
+                }
+            }
+        }
+    }
+
     private fun openDemo() {
         runCatching {
             startActivity(Intent(this, DemoActivity::class.java))
@@ -332,6 +351,7 @@ private fun LauncherHost(
     onOpenNote: (String) -> Unit,
     onOpenInkNote: (path: String, title: String) -> Unit,
     onQuickNote: () -> Unit,
+    onQuickInk: () -> Unit,
     /** Back on Home itself. Home has nothing behind it, so this only steps back in the split screen. */
     onBackAtHome: () -> Unit,
     newNoteRequests: Int,
@@ -427,6 +447,7 @@ private fun LauncherHost(
             onOpenTab = onRoute,
             onOpenSettings = { onRoute(LauncherRoute.Settings) },
             onQuickNote = onQuickNote,
+            onQuickInk = onQuickInk,
             nextRoutineLabel = next?.item?.label,
             nextRoutinePart = next?.item?.part ?: PartOfDay.AnyTime,
             nextOpensSomething = next?.item?.let { tabOf(it) != null || it.appComponent() != null } ?: true,
