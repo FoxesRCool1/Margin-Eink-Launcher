@@ -1,5 +1,16 @@
 # Release notes
 
+## 1.2.0
+
+- The pen: the line follows the pen with less delay, curves smoothly through fast round letters, and no longer wobbles in width
+- The pen width you pick last is the one the next note and the PDF reader start with. Turning the screen keeps your tool
+- On the last page of a note, the right arrow adds a page
+- Home: a new button opens a blank page to write on by hand. A page left blank is not kept
+- In a split with one half above the other, a note keeps its page buttons above the keyboard
+- Labels under icons get smaller instead of being cut. Selected text is light grey
+- A book's notes file that cannot be read is never written over
+- A shorter, clearer README
+
 ## 1.1.0
 
 - The screen no longer stops for a moment: calls to the tablet, and leaving a handwritten note, happen in the background. A second tap on a row is no longer ignored
