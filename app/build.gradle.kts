@@ -21,7 +21,7 @@ val viwoodsTargetSdk: Int =
 // updater does the same sum in `AppVersion`, so a newer release always has a
 // larger code and Android takes it as an update. That is why the minor and
 // the patch number stop at 99.
-val appVersionName = "1.1.0"
+val appVersionName = "1.2.0"
 val appVersionCode: Int = run {
     val parts = appVersionName.split(".").map { it.toInt() }
     require(parts.size == 3 && parts[1] in 0..99 && parts[2] in 0..99) {
