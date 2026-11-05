@@ -26,7 +26,9 @@ import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.reading.BookAnnotations
+import io.github.foxesrcool1.margin.core.reading.DictionaryApp
 import io.github.foxesrcool1.margin.core.reading.Highlight
+import io.github.foxesrcool1.margin.core.reading.mergeDictionaryApps
 import io.github.foxesrcool1.margin.core.reading.ReadingLog
 import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.reading.ReadingRepository
@@ -105,6 +107,10 @@ class ReaderUiState {
 
     /** The split screen: a note beside the book. */
     var split by mutableStateOf(false)
+
+    /** The words waiting for a dictionary app, and the list it is shown in. Null when the list is closed. */
+    var dictionaryWords by mutableStateOf("")
+    var dictionaryApps by mutableStateOf<List<DictionaryApp>?>(null)
 }
 
 /**
@@ -142,8 +148,8 @@ class EpubReaderActivity : FragmentActivity() {
     private val paneHost = object : PaneHost {
         override val bookTitle: String get() = ui.title
 
-        override fun openBook(book: io.github.foxesrcool1.margin.core.books.LibraryBook) =
-            openBookBeside(this@EpubReaderActivity, split, book, this)
+        override fun openBook(book: io.github.foxesrcool1.margin.core.books.LibraryBook, highlightId: String?) =
+            openBookBeside(this@EpubReaderActivity, split, book, this, highlightId)
 
         override fun keeper(): Intent =
             io.github.foxesrcool1.margin.ui.split.BesideActivity.then(this@EpubReaderActivity, intent)
@@ -155,6 +161,8 @@ class EpubReaderActivity : FragmentActivity() {
 
     private var bookId = ""
     private var bookPath = ""
+    /** The highlight the book was asked to open at, from a search hit. Null when it was not. */
+    private var initialHighlightId: String? = null
     private var publication: Publication? = null
     private var navigator: EpubNavigatorFragment? = null
     private var selectionMode: ActionMode? = null
@@ -173,6 +181,8 @@ class EpubReaderActivity : FragmentActivity() {
         bookPath = intent.getStringExtra(EXTRA_PATH).orEmpty()
         bookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
         ui.title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        // Only on the first start: a restart goes back to the saved place, not to the highlight.
+        initialHighlightId = if (savedInstanceState == null) intent.getStringExtra(EXTRA_HIGHLIGHT_ID) else null
         if (bookPath.isBlank() || bookId.isBlank()) {
             AppLog.e(TAG, "Opened with no book")
             finish()
@@ -329,7 +339,7 @@ class EpubReaderActivity : FragmentActivity() {
 
         if (opened == null) {
             ui.loading = false
-            ui.failure = "This book will not open. See the log."
+            ui.failure = "This book could not be opened."
             return
         }
         publication = opened
@@ -343,7 +353,7 @@ class EpubReaderActivity : FragmentActivity() {
 
         val factory = EpubNavigatorFactory(opened)
         supportFragmentManager.fragmentFactory = factory.createFragmentFactory(
-            initialLocator = annotations.position?.toLocator(),
+            initialLocator = initialLocatorOf(annotations),
             initialPreferences = ui.settings.toEpubPreferences(),
             configuration = EpubNavigatorFragment.Configuration {
                 servedAssets = servedAssets + LITERATA_ASSET
@@ -379,6 +389,29 @@ class EpubReaderActivity : FragmentActivity() {
         val took = System.currentTimeMillis() - started
         AppLog.i(TAG, "Opened $bookPath in $took ms, ${annotations.highlights.size} highlights")
         io.github.foxesrcool1.margin.core.speed.SpeedWatch.check("Opening the book", took, io.github.foxesrcool1.margin.core.speed.SpeedWatch.Budget.OPEN_BOOK)
+    }
+
+    /**
+     * The place the book opens at. A search hit asks for its highlight, so the
+     * highlight's locator wins when it is in the loaded annotations, the way
+     * [ReaderActions.goTo] turns a highlight into a place. Otherwise the last
+     * place read, as before.
+     */
+    private fun initialLocatorOf(annotations: BookAnnotations): Locator? {
+        val id = initialHighlightId
+        if (id != null) {
+            val highlight = annotations.highlight(id)
+            if (highlight != null) {
+                return runCatching { highlight.locator.toLocator() }
+                    .onFailure { AppLog.w(TAG, "Could not read the locator of the highlight $id", it) }
+                    .getOrNull()
+            } else {
+                AppLog.w(TAG, "The highlight $id is not in the annotations of $bookId")
+            }
+        }
+        return runCatching { annotations.position?.toLocator() }
+            .onFailure { AppLog.w(TAG, "Could not read the saved position of $bookId", it) }
+            .getOrNull()
     }
 
     private fun flatten(links: List<Link>, depth: Int): List<TocRow> =
@@ -552,6 +585,96 @@ class EpubReaderActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * The selected words go to a dictionary app the user has installed, by the
+     * ACTION_PROCESS_TEXT intent. The platform chooser would fade and float,
+     * so with more than one app the choice is a plain list of our own. The
+     * last chosen app comes first, so a second look up is one tap.
+     */
+    private fun lookUp() {
+        val current = navigator ?: return
+        lifecycleScope.launch {
+            val selection = current.currentSelection()
+            current.clearSelection()
+            selectionMode?.finish()
+            val words = selection?.locator?.text?.highlight?.trim().orEmpty()
+            if (words.isEmpty()) {
+                ui.notice = "Nothing was selected"
+                return@launch
+            }
+
+            val apps = withContext(AppDispatchers.io) { findDictionaryApps() }
+            if (apps.isEmpty()) {
+                ui.notice = "No dictionary app found"
+                return@launch
+            }
+            if (apps.size == 1) {
+                startDictionary(apps[0], words)
+                return@launch
+            }
+            ui.dictionaryWords = words
+            ui.dictionaryApps = apps
+        }
+    }
+
+    /**
+     * The apps that take the words: text/plain with ACTION_PROCESS_TEXT, and
+     * the older ColorDict intent that ColorDict, GoldenDict, Fora and Livio
+     * take instead. One row per package, the last chosen one first.
+     */
+    private suspend fun findDictionaryApps(): List<DictionaryApp> = runCatching {
+        val last = settingsStore.dictionaryApp.first()
+        val processText = queryDictionaryApps(Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain"), colorDict = false)
+        val colorDictApps = queryDictionaryApps(Intent(COLORDICT_SEARCH_ACTION), colorDict = true)
+        mergeDictionaryApps(processText, colorDictApps, last, packageName)
+    }.getOrElse {
+        AppLog.e(TAG, "Could not list the dictionary apps", it)
+        emptyList()
+    }
+
+    private fun queryDictionaryApps(intent: Intent, colorDict: Boolean): List<DictionaryApp> =
+        packageManager
+            .queryIntentActivities(intent, 0)
+            .mapNotNull { resolved ->
+                val packageName = resolved.activityInfo.packageName
+                runCatching {
+                    DictionaryApp(
+                        packageName = packageName,
+                        className = resolved.activityInfo.name,
+                        label = resolved.loadLabel(packageManager).toString().ifBlank { packageName },
+                        colorDict = colorDict,
+                    )
+                }.getOrElse {
+                    AppLog.w(TAG, "Skipped a dictionary app whose label could not be read", it)
+                    null
+                }
+            }
+
+    private fun startDictionary(app: DictionaryApp, words: String) {
+        runCatching {
+            val intent = if (app.colorDict) {
+                Intent(COLORDICT_SEARCH_ACTION)
+                    .putExtra(COLORDICT_EXTRA_QUERY, words)
+                    .setClassName(app.packageName, app.className)
+            } else {
+                Intent(Intent.ACTION_PROCESS_TEXT)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_PROCESS_TEXT, words)
+                    .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+                    .setClassName(app.packageName, app.className)
+            }
+            startActivity(intent)
+        }.onSuccess {
+            lifecycleScope.launch { settingsStore.setDictionaryApp(app.packageName) }
+            AppLog.i(TAG, "Look up sent to ${app.packageName}")
+        }.onFailure {
+            AppLog.e(TAG, "Could not start the dictionary app ${app.packageName}", it)
+            ui.notice = "The dictionary app did not open"
+        }
+        ui.dictionaryApps = null
+        ui.dictionaryWords = ""
+    }
+
     private suspend fun showHighlights() {
         val current = navigator ?: return
         val underline = ui.settings.underlineHighlights
@@ -600,6 +723,22 @@ class EpubReaderActivity : FragmentActivity() {
         override fun highlight() = highlightSelection(thenWriteNote = false)
 
         override fun highlightWithNote() = highlightSelection(thenWriteNote = true)
+
+        override fun lookUp() = this@EpubReaderActivity.lookUp()
+
+        override fun lookUpIn(app: DictionaryApp) {
+            val words = ui.dictionaryWords
+            if (words.isEmpty()) {
+                ui.dictionaryApps = null
+                return
+            }
+            startDictionary(app, words)
+        }
+
+        override fun cancelLookUp() {
+            ui.dictionaryApps = null
+            ui.dictionaryWords = ""
+        }
 
         override fun cancelSelection() {
             navigator?.clearSelection()
@@ -719,19 +858,27 @@ class EpubReaderActivity : FragmentActivity() {
         const val EXTRA_PATH = "book_path"
         const val EXTRA_BOOK_ID = "book_id"
         const val EXTRA_TITLE = "book_title"
+        const val EXTRA_HIGHLIGHT_ID = "highlight_id"
 
         private const val SAVE_EVERY_MILLIS = 5_000L
 
         /** How long the book engine gets to cut the text into pages again after the width changed. */
         private const val NEW_LAYOUT_SETTLE_MILLIS = 800L
         private val HIGHLIGHT_GREY = Color.rgb(200, 200, 200)
+
+        /** The older ColorDict intent, taken by ColorDict, GoldenDict, Fora and Livio. */
+        const val COLORDICT_SEARCH_ACTION = "colordict.intent.action.SEARCH"
+        const val COLORDICT_EXTRA_QUERY = "EXTRA_QUERY"
         private val CONTAINER_ID = android.view.View.generateViewId()
 
-        fun intent(context: Context, bookPath: String, bookId: String, title: String): Intent =
-            Intent(context, EpubReaderActivity::class.java)
+        fun intent(context: Context, bookPath: String, bookId: String, title: String, highlightId: String? = null): Intent {
+            val intent = Intent(context, EpubReaderActivity::class.java)
                 .putExtra(EXTRA_PATH, bookPath)
                 .putExtra(EXTRA_BOOK_ID, bookId)
                 .putExtra(EXTRA_TITLE, title)
+            if (highlightId != null) intent.putExtra(EXTRA_HIGHLIGHT_ID, highlightId)
+            return intent
+        }
 
         /** The goal line under the menu. */
         fun goalFraction(state: ReaderUiState): Float =
@@ -747,6 +894,15 @@ interface ReaderActions {
     fun goTo(highlight: Highlight)
     fun highlight()
     fun highlightWithNote()
+
+    /** Sends the selected words to a dictionary app. */
+    fun lookUp()
+
+    /** Sends the words waiting in the list to the chosen dictionary app. */
+    fun lookUpIn(app: DictionaryApp)
+
+    /** Closes the list of dictionary apps without sending the words. */
+    fun cancelLookUp()
     fun cancelSelection()
     fun saveNote(highlightId: String, note: String)
 

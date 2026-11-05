@@ -112,6 +112,14 @@ class DataRepositoryTest {
     }
 
     @Test
+    fun `a new note path dodges a name that is taken`() {
+        val first = repository.newNotePath("ideas", "5 November 2026 17.33")
+        store.writeText(first, "one")
+        val second = repository.newNotePath("ideas", "5 November 2026 17.33")
+        assertEquals("notes/ideas/5 November 2026 17.33 2.md", second)
+    }
+
+    @Test
     fun `a journal entry is written and read back by date`() {
         val date = LocalDate.of(2026, 9, 19)
         assertNull(repository.journalEntry(date))

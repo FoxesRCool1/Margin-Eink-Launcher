@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.ui.split
 import io.github.foxesrcool1.margin.core.ink.PageTemplate
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.ui.home.LauncherRoute
+import java.time.LocalDate
 
 /**
  * What the second half of the split screen shows.
@@ -32,6 +33,9 @@ sealed interface PanePage {
 
     /** The typed and the handwritten note that belong to one book. */
     data class BookNotes(val bookTitle: String) : PanePage
+
+    /** The Journal, opened on one day, such as the day of an entry the search found. */
+    data class JournalDay(val date: LocalDate) : PanePage
 }
 
 /**
@@ -47,6 +51,10 @@ internal fun PanePage.holds(): Set<String> = when (this) {
     is PanePage.BookNotes -> setOf(
         "file:" + StorageLayout.readingNotePath(bookTitle.ifBlank { UNTITLED_BOOK }, handwritten = false),
         "file:" + StorageLayout.readingNotePath(bookTitle.ifBlank { UNTITLED_BOOK }, handwritten = true),
+    )
+    is PanePage.JournalDay -> setOf(
+        "file:" + StorageLayout.journalPath(date),
+        "file:" + StorageLayout.journalPath(date, handwritten = true),
     )
 }
 
@@ -105,6 +113,10 @@ object PanePageCodec {
                 fields[KIND] = "book"
                 fields[TITLE] = page.bookTitle
             }
+            is PanePage.JournalDay -> {
+                fields[KIND] = "journal"
+                fields[PATH] = page.date.toString()
+            }
         }
         return fields
     }
@@ -119,6 +131,9 @@ object PanePageCodec {
                 PanePage.InkNote(path, field(TITLE).orEmpty(), PageTemplate.fromId(field(TEMPLATE)))
             }
             "book" -> field(TITLE)?.let(PanePage::BookNotes)
+            "journal" -> field(PATH)?.let { text ->
+                runCatching { PanePage.JournalDay(LocalDate.parse(text)) }.getOrNull()
+            }
             else -> null
         } ?: return null
         return SplitCarry(page, swapped = field(SWAPPED) == "true")

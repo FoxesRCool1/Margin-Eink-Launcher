@@ -17,6 +17,7 @@ import io.github.foxesrcool1.margin.design.EinkTheme
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.support.captureTo
+import io.github.foxesrcool1.margin.core.reading.DictionaryApp
 import io.github.foxesrcool1.margin.ui.reading.epub.ReaderActions
 import io.github.foxesrcool1.margin.ui.reading.epub.ReaderChrome
 import io.github.foxesrcool1.margin.ui.reading.epub.ReaderPanel
@@ -50,6 +51,9 @@ class ReaderChromeScreenshotTest {
         override fun goTo(highlight: Highlight) = Unit
         override fun highlight() = Unit
         override fun highlightWithNote() = Unit
+        override fun lookUp() = Unit
+        override fun lookUpIn(app: DictionaryApp) = Unit
+        override fun cancelLookUp() = Unit
         override fun cancelSelection() = Unit
         override fun saveNote(highlightId: String, note: String) = Unit
         override fun handwrite(highlightId: String) = Unit

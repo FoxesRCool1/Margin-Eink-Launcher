@@ -91,18 +91,26 @@ class BooksRepository(private val data: DataRepository) {
      * place, or null when no book was ever opened. Unlike [byRecent] it
      * ignores the day a book came in, and it reads the title of one book only.
      */
-    fun lastRead(): Pair<LibraryBook, Long>? {
-        val (stored, readAt) = data.listBooks()
+    fun lastRead(): Pair<LibraryBook, Long>? = recentlyRead(1).firstOrNull()
+
+    /**
+     * The books the reader last saved a place in, newest first. A book that
+     * was never opened is not in the list, unlike [byRecent].
+     */
+    fun recentlyRead(count: Int): List<Pair<LibraryBook, Long>> {
+        if (count <= 0) return emptyList()
+        return data.listBooks()
             .map { it to data.store.lastModified(StorageLayout.annotationsPath(StorageLayout.bookIdFor(it.name, it.sizeBytes))) }
             .filter { it.second > 0L }
-            .maxByOrNull { it.second }
-            ?: return null
-        val book = LibraryBook(
-            stored = stored,
-            metadata = metadataOf(stored),
-            bookId = StorageLayout.bookIdFor(stored.name, stored.sizeBytes),
-        )
-        return book to readAt
+            .sortedByDescending { it.second }
+            .take(count)
+            .map { (stored, readAt) ->
+                LibraryBook(
+                    stored = stored,
+                    metadata = metadataOf(stored),
+                    bookId = StorageLayout.bookIdFor(stored.name, stored.sizeBytes),
+                ) to readAt
+            }
     }
 
     private fun lastReadAt(book: LibraryBook): Long = maxOf(

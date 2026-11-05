@@ -216,13 +216,8 @@ fun ReadingScreen(
         OptionsDialog(
             title = selected.metadata.title,
             onDismiss = { optionsFor = null },
+            message = listOf(selected.metadata.author ?: "No author in the file", "Size: ${selected.sizeLabel()}").joinToString("\n"),
             options = listOf(
-                DialogOption(
-                    label = selected.metadata.author ?: "No author in the file",
-                    enabled = false,
-                    onSelect = { },
-                ),
-                DialogOption(label = "Size: ${selected.sizeLabel()}", enabled = false) { },
                 DialogOption(label = "Delete", icon = Lucide.Trash2) {
                     deleting = selected
                     optionsFor = null
@@ -235,7 +230,7 @@ fun ReadingScreen(
     if (beingDeleted != null) {
         ConfirmDialog(
             title = "Delete ${beingDeleted.metadata.title}?",
-            message = "The book and every note you made on it go away and cannot come back.",
+            message = "Its notes go too. This cannot be undone.",
             confirmText = "Delete",
             cancelText = "Keep",
             onConfirm = {
@@ -295,7 +290,7 @@ private fun BookRow(
 private fun openBook(opener: PageOpener, book: LibraryBook, say: (String) -> Unit) {
     runCatching { opener.openBook(book) }.onFailure {
         AppLog.e(TAG, "Could not open ${book.path}", it)
-        say("The book could not be opened")
+        say("This book could not be opened.")
     }
 }
 

@@ -45,6 +45,8 @@ import io.github.foxesrcool1.margin.ui.home.HomeScreen
 import io.github.foxesrcool1.margin.ui.home.rememberMinuteClock
 import io.github.foxesrcool1.margin.ui.journal.JournalScreen
 import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
+import io.github.foxesrcool1.margin.ui.search.SearchScreen
+import io.github.foxesrcool1.margin.ui.search.SearchState
 import io.github.foxesrcool1.margin.ui.ink.InkCanvasView
 import io.github.foxesrcool1.margin.ui.writing.WritingScreen
 import io.github.foxesrcool1.margin.ui.log.LogViewerScreen
@@ -69,6 +71,7 @@ import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
 import io.github.foxesrcool1.margin.ui.update.UpdateScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 private const val TAG = "HomeActivity"
@@ -90,6 +93,9 @@ class HomeActivity : ComponentActivity() {
      * reach it.
      */
     private val route: MutableState<LauncherRoute> = mutableStateOf(LauncherRoute.Home)
+
+    /** The day the Journal tab opens on, from a journal entry the search found. Null opens on today. */
+    private val journalDate: MutableState<LocalDate?> = mutableStateOf(null)
 
     /** Ctrl+N on a Bluetooth keyboard bumps this, and the Writing tab notices. */
     private val newNoteRequests = mutableIntStateOf(0)
@@ -127,9 +133,9 @@ class HomeActivity : ComponentActivity() {
     private lateinit var paneInk: PaneInk
 
     private val paneHost = object : PaneHost {
-        override fun openBook(book: LibraryBook) {
+        override fun openBook(book: LibraryBook, highlightId: String?) {
             SplitReturn.leftFrom(route.value)
-            openBookBeside(this@HomeActivity, split, book, this)
+            openBookBeside(this@HomeActivity, split, book, this, highlightId)
         }
 
         override fun paneInk(canvas: InkCanvasView?) = paneInk.serve(canvas)
@@ -177,9 +183,17 @@ class HomeActivity : ComponentActivity() {
                         CompositionLocalProvider(LocalPageOpener provides opener) {
                             LauncherHost(
                                 route = route.value,
+                                journalDate = journalDate.value,
                                 onRoute = { next ->
                                     routeChangedAt = android.os.SystemClock.uptimeMillis()
+                                    journalDate.value = null
                                     route.value = next
+                                    split.mainChanged()
+                                },
+                                onOpenJournalDay = { date ->
+                                    routeChangedAt = android.os.SystemClock.uptimeMillis()
+                                    journalDate.value = date
+                                    route.value = LauncherRoute.Journal
                                     split.mainChanged()
                                 },
                                 onOpenDemo = { openDemo() },
@@ -205,6 +219,7 @@ class HomeActivity : ComponentActivity() {
     /** Home, with no second half. After a page left for a screen of its own. */
     private fun resetToHome() {
         routeChangedAt = 0L
+        journalDate.value = null
         route.value = LauncherRoute.Home
         split.close()
     }
@@ -239,6 +254,7 @@ class HomeActivity : ComponentActivity() {
 
     private fun showRestored(placed: SplitRestore) {
         routeChangedAt = 0L
+        journalDate.value = null
         route.value = placed.route
         placed.carry?.let { split.open(it.page, it.swapped) }
         AppLog.i(TAG, "Back from a screen: ${placed.route}, second half ${placed.carry?.page}")
@@ -281,6 +297,7 @@ class HomeActivity : ComponentActivity() {
      */
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_N && event?.isCtrlPressed == true) {
+            journalDate.value = null
             route.value = LauncherRoute.Writing
             split.mainChanged()
             newNoteWanted = true
@@ -302,10 +319,7 @@ class HomeActivity : ComponentActivity() {
         val notes = NotesRepository(DataRoot.repository(this))
         kotlin.concurrent.thread(name = "eink-quick-note", isDaemon = true) {
             val folder = notes.quickNotePath()
-            val stamp = java.time.LocalDateTime.now()
-                .withNano(0)
-                .toString()
-                .replace(':', '-')
+            val stamp = io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
             val path = runCatching { notes.createNote(folder, stamp) }.getOrNull()
             val madeWith = path?.let { runCatching { notes.read(it) }.getOrNull() }
             runOnUiThread {
@@ -321,7 +335,7 @@ class HomeActivity : ComponentActivity() {
     private fun quickInkNote() {
         val data = DataRoot.repository(this)
         kotlin.concurrent.thread(name = "eink-quick-ink", isDaemon = true) {
-            val name = "Handwritten " + java.time.LocalDateTime.now().withNano(0).toString().replace(':', '-')
+            val name = "Handwritten " + io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
             val path = runCatching {
                 io.github.foxesrcool1.margin.core.ink.InkNotesRepository(data)
                     .freshPath(NotesRepository(data).quickNotePath(), name)
@@ -346,7 +360,11 @@ class HomeActivity : ComponentActivity() {
 @Composable
 private fun LauncherHost(
     route: LauncherRoute,
+    /** The day the Journal tab opens on, from the search. Null opens on today. */
+    journalDate: LocalDate?,
     onRoute: (LauncherRoute) -> Unit,
+    /** Opens the Journal on one day, or on today for null. */
+    onOpenJournalDay: (LocalDate?) -> Unit,
     onOpenDemo: () -> Unit,
     onOpenNote: (String) -> Unit,
     onOpenInkNote: (path: String, title: String) -> Unit,
@@ -363,10 +381,17 @@ private fun LauncherHost(
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val opener = rememberPageOpener()
+    // The search and its results stay on show when the route moves to the
+    // Journal and back, so Back from a day the search opened lands on the
+    // same words and the same results.
+    val searchState = remember { SearchState() }
+    // Search keeps its words only for the way back from a journal day. Home
+    // means the user is done with it.
+    LaunchedEffect(route) { if (route == LauncherRoute.Home) searchState.clear() }
     var next by remember { mutableStateOf<RoutineStatus?>(null) }
-    // The book or the note to go back to. The old one stays on show until the
-    // new one has been read, so the row never goes blank and fills in again.
-    var continueTarget by remember { mutableStateOf<ContinueTarget?>(null) }
+    // The things to go back to, newest first. The old list stays on show until
+    // the new one has been read, so the rows never go blank and fill in again.
+    var continueTargets by remember { mutableStateOf<List<ContinueTarget>>(emptyList()) }
 
     // Home is read again every time it comes back, so ticking something off
     // in the Journal, or reading a few pages, shows up here at once. It is
@@ -386,10 +411,10 @@ private fun LauncherHost(
         val loaded = kotlinx.coroutines.withContext(io.github.foxesrcool1.margin.core.threads.AppDispatchers.io) {
             val data = DataRoot.repository(context)
             runCatching { nextRoutine(data) }.getOrNull() to
-                runCatching { ContinueFinder(data).find() }.getOrNull()
+                runCatching { ContinueFinder(data).findRecent(2) }.getOrDefault(emptyList())
         }
         next = loaded.first
-        continueTarget = loaded.second
+        continueTargets = loaded.second
     }
 
     val homeLabels by remember(context) { SettingsStore(context).homeLabels }
@@ -432,13 +457,20 @@ private fun LauncherHost(
         if (route != LauncherRoute.Settings && route.parent != LauncherRoute.Settings) settingsPage = 0
     }
 
+    // Where Back goes from a tab. The Journal opened by a search goes back to
+    // that search, with its words and results still on show; every other tab
+    // goes to Home.
+    fun backFrom(route: LauncherRoute) =
+        if (route == LauncherRoute.Journal && journalDate != null) LauncherRoute.Search else route.parent
+
     // Back goes one level up: from the log and the updates to Settings, from
-    // a tab to Home. On Home it takes the second half back to its choice and
-    // then closes the split screen, because a home screen has nowhere behind
-    // it. A page in the second half that has a way back of its own gets Back
-    // first: it is composed after this one.
+    // a tab to Home, and from a Journal the search opened to the search. On
+    // Home it takes the second half back to its choice and then closes the
+    // split screen, because a home screen has nowhere behind it. A page in the
+    // second half that has a way back of its own gets Back first: it is
+    // composed after this one.
     BackHandler(enabled = true) {
-        if (route != LauncherRoute.Home) onRoute(route.parent) else onBackAtHome()
+        if (route != LauncherRoute.Home) onRoute(backFrom(route)) else onBackAtHome()
     }
 
     when (route) {
@@ -448,10 +480,12 @@ private fun LauncherHost(
             onOpenSettings = { onRoute(LauncherRoute.Settings) },
             onQuickNote = onQuickNote,
             onQuickInk = onQuickInk,
+            onSwipeUp = { onRoute(LauncherRoute.Apps) },
+            onSwipeDown = { onRoute(LauncherRoute.Search) },
             nextRoutineLabel = next?.item?.label,
             nextRoutinePart = next?.item?.part ?: PartOfDay.AnyTime,
             nextOpensSomething = next?.item?.let { tabOf(it) != null || it.appComponent() != null } ?: true,
-            continueTarget = continueTarget,
+            continueTargets = continueTargets,
             onContinue = { target ->
                 scope.launch {
                     // The row may be older than the file: a quick note with nothing
@@ -506,7 +540,8 @@ private fun LauncherHost(
         )
 
         LauncherRoute.Journal -> JournalScreen(
-            onBack = { onRoute(LauncherRoute.Home) },
+            onBack = { onRoute(backFrom(LauncherRoute.Journal)) },
+            initialDate = journalDate,
         )
 
         LauncherRoute.Apps -> AppsScreen(
@@ -533,6 +568,15 @@ private fun LauncherHost(
 
         LauncherRoute.Update -> UpdateScreen(
             onBack = { onRoute(route.parent) },
+        )
+
+        LauncherRoute.Search -> SearchScreen(
+            onBack = { onRoute(LauncherRoute.Home) },
+            onOpenNote = onOpenNote,
+            onOpenInkNote = onOpenInkNote,
+            onOpenBook = { book, highlightId -> opener.openBook(book, highlightId) },
+            onOpenJournal = onOpenJournalDay,
+            state = searchState,
         )
     }
 }

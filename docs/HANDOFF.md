@@ -284,6 +284,27 @@ know:
 - **A quick handwritten page has no file until there is ink.**
   `InkNotesRepository.freshPath` gives the name only.
 
+### 2k. Search, Look Up and a simpler UI, 2026-11-05
+
+`PROGRESS.md`, top section, and decision 0029. What a new session must know:
+
+- **Search has no index.** `core/search/SearchSource` reads the files on
+  each search and `TextSearch` matches them. Pure Kotlin, tested. If the
+  log shows `Slow:` for the search, add a cache there, not in the screen.
+- **Search is a `LauncherRoute` but not a tab.** Home opens it from the
+  bottom row. It also works in a split half (`SplitPane`).
+- **Look Up uses `ACTION_PROCESS_TEXT`** and the `<queries>` entry in the
+  manifest. The last app chosen is `SettingsStore.dictionaryApp`.
+- **Continue comes from `ContinueFinder.findRecent(2)`.** The second item is
+  the "Before" row. `find()` still gives one item.
+- **Hide a control that cannot be used; do not grey it.** Paging buttons
+  and busy states are the exception.
+- **Search keeps its state in `SearchState`,** held by `LauncherHost`, so
+  Back from a journal day finds the results. Home clears it.
+- **Home has swipes** (`onSwipeUp`, `onSwipeDown` in `HomeScreen`). A split
+  half passes none.
+- **Released as 1.3.0.**
+
 ---
 
 ## 3. What to do next, in order

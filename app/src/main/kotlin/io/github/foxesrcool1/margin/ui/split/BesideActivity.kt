@@ -38,9 +38,9 @@ class BesideActivity : ComponentActivity() {
     private val split = SplitState()
 
     private val host = object : PaneHost {
-        override fun openBook(book: LibraryBook) {
+        override fun openBook(book: LibraryBook, highlightId: String?) {
             // In this task, so the book stays on this side of Android's split.
-            runCatching { startActivity(bookIntent(this@BesideActivity, book)) }
+            runCatching { startActivity(bookIntent(this@BesideActivity, book, highlightId)) }
                 .onFailure { AppLog.e(TAG, "Could not open ${book.path}", it) }
         }
 

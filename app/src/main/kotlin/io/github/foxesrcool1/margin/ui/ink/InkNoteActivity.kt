@@ -114,8 +114,8 @@ class InkNoteActivity : ComponentActivity() {
         intent.splitCarry()?.let { split.open(it.page, it.swapped) }
 
         val paneHost = object : PaneHost {
-            override fun openBook(book: io.github.foxesrcool1.margin.core.books.LibraryBook) =
-                openBookBeside(this@InkNoteActivity, split, book, this)
+            override fun openBook(book: io.github.foxesrcool1.margin.core.books.LibraryBook, highlightId: String?) =
+                openBookBeside(this@InkNoteActivity, split, book, this, highlightId)
 
             override fun keeper(): Intent = io.github.foxesrcool1.margin.ui.split.BesideActivity.then(
                 this@InkNoteActivity,

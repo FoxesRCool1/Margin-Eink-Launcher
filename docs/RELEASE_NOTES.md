@@ -1,5 +1,15 @@
 # Release notes
 
+## 1.3.0
+
+- Search: one search over your notes, journal entries and book highlights. Open it from Home with the search button, or swipe down on Home. A highlight opens the book at that place, a journal entry opens that day, and Back comes back to the results
+- Swipe up on Home to open Apps
+- Look Up: hold a word in a book and press Look Up to send it to a dictionary app on the tablet
+- Home shows the book or note you had open before the one in Continue, so you can jump back
+- A typed note no longer needs a name. A note without one is named by the date and time, like "5 November 2026 17.33"
+- Buttons that cannot be used are hidden instead of grey. Shorter, plainer words in the questions and messages
+- The journal's type button brings up the keyboard at once
+
 ## 1.2.0
 
 - The pen: the line follows the pen with less delay, curves smoothly through fast round letters, and no longer wobbles in width

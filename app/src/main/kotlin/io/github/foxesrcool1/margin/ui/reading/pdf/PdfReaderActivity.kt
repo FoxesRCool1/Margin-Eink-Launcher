@@ -143,7 +143,9 @@ class PdfReaderActivity : ComponentActivity() {
     private val paneHost = object : PaneHost {
         override val bookTitle: String get() = ui.title
 
-        override fun openBook(book: LibraryBook) = openBookBeside(this@PdfReaderActivity, split, book, this)
+        override fun openBook(book: LibraryBook, highlightId: String?) =
+            // A PDF book has no highlights, so the id is left behind.
+            openBookBeside(this@PdfReaderActivity, split, book, this)
 
         override fun keeper(): Intent =
             io.github.foxesrcool1.margin.ui.split.BesideActivity.then(this@PdfReaderActivity, intent)

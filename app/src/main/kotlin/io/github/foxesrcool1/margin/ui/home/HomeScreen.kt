@@ -17,16 +17,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -93,6 +97,10 @@ fun HomeScreen(
     onQuickNote: () -> Unit = {},
     /** A blank handwritten page, at once. */
     onQuickInk: () -> Unit = {},
+    /** A swipe up on the screen. The launcher passes the way to the Apps tab. */
+    onSwipeUp: () -> Unit = {},
+    /** A swipe down on the screen. The launcher passes the way to Search. */
+    onSwipeDown: () -> Unit = {},
     nextRoutineLabel: String? = null,
     /** When in the day the next item belongs. Any Time reads "Next", the others "This Evening" and so on. */
     nextRoutinePart: PartOfDay = PartOfDay.AnyTime,
@@ -102,8 +110,8 @@ fun HomeScreen(
      */
     nextOpensSomething: Boolean = true,
     onStartNext: () -> Unit = {},
-    /** The book or note to go back to. Null leaves the row out. */
-    continueTarget: ContinueTarget? = null,
+    /** The book or note to go back to, newest first. An empty list leaves the rows out. */
+    continueTargets: List<ContinueTarget> = emptyList(),
     onContinue: (ContinueTarget) -> Unit = {},
     modifier: Modifier = Modifier,
     now: LocalDateTime? = null,
@@ -126,7 +134,32 @@ fun HomeScreen(
         use24Hour ?: runCatching { android.text.format.DateFormat.is24HourFormat(context) }.getOrDefault(true)
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    // One screen change per swipe, like a page turn. The threshold keeps a
+    // small drag from counting, and one action is taken at the end of the
+    // drag, not along the way.
+    val swipeThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
+    val swipeUp by rememberUpdatedState(onSwipeUp)
+    val swipeDown by rememberUpdatedState(onSwipeDown)
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                var dragTotal = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { dragTotal = 0f },
+                    onDragEnd = {
+                        if (dragTotal <= -swipeThresholdPx) {
+                            swipeUp()
+                        } else if (dragTotal >= swipeThresholdPx) {
+                            swipeDown()
+                        }
+                        dragTotal = 0f
+                    },
+                    onDragCancel = { dragTotal = 0f },
+                    onVerticalDrag = { _, amount -> dragTotal += amount },
+                )
+            },
+    ) {
         val wide = maxWidth > maxHeight
         // A narrow half of the split screen, or a short one, has no corner to
         // spare: the plant would sit on the clock or the icons, and the clock
@@ -176,8 +209,16 @@ fun HomeScreen(
                 }
             }
             val goOn: @Composable () -> Unit = {
-                if (continueTarget != null) {
-                    ContinueRow(target = continueTarget, onClick = { onContinue(continueTarget) })
+                if (continueTargets.isNotEmpty()) {
+                    ContinueRow(target = continueTargets.first(), onClick = { onContinue(continueTargets.first()) })
+                    // The second row takes its room from the tab grid, which
+                    // gets smaller, and not from the controls at the bottom.
+                    // A half of the split screen has no room to spare, so it
+                    // is left out there.
+                    if (continueTargets.size > 1 && !compact) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        BeforeRow(target = continueTargets[1], onClick = { onContinue(continueTargets[1]) })
+                    }
                 }
             }
 
@@ -253,6 +294,8 @@ fun HomeScreen(
                 IconPressButton(icon = Lucide.SquarePen, label = "Quick note", onClick = onQuickNote)
                 Spacer(modifier = Modifier.width(4.dp))
                 SplitButton()
+                Spacer(modifier = Modifier.width(4.dp))
+                IconPressButton(icon = Lucide.Search, label = "Search", onClick = { onOpenTab(LauncherRoute.Search) })
                 Spacer(modifier = Modifier.width(4.dp))
                 IconPressButton(icon = Lucide.Settings, label = "Settings", onClick = onOpenSettings)
             }
@@ -380,6 +423,44 @@ private fun ContinueRow(
             Spacer(modifier = Modifier.width(12.dp))
             CapsLabel(text = percent, style = EinkType.capsSmall.copy(color = foreground))
         }
+    }
+}
+
+/**
+ * The way back to the document before the newest one. The same tap as the
+ * Continue row, but smaller: the title in the body size, one line, a "Before"
+ * label in front and no progress mark.
+ */
+@Composable
+private fun BeforeRow(
+    target: ContinueTarget,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = EinkDimens.touchTarget)
+            .clip(EinkShapes.field)
+            .background(if (pressed) EinkColors.Ink else EinkColors.Paper)
+            .border(EinkDimens.hairline, EinkColors.Ink, EinkShapes.field)
+            .einkClickable(interactionSource = interactionSource, onClick = onClick)
+            .semantics(mergeDescendants = true) { role = Role.Button }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CapsLabel(text = "Before", style = EinkType.capsSmall.copy(color = foreground))
+        EinkText(
+            text = target.title,
+            style = EinkType.body.copy(color = foreground),
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

@@ -16,6 +16,7 @@ enum class LauncherRoute(val title: String) {
     Settings("Settings"),
     Log("Log"),
     Update("Updates"),
+    Search("Search"),
     ;
 
     /** Where Back goes from here. The log and the updates are pages of Settings. */

@@ -161,6 +161,13 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_JOURNAL_GOAL] = JournalGoal.clean(words) }
     }
 
+    /** The dictionary app the reader sent the last look up to, so it comes first in the list. */
+    val dictionaryApp: Flow<String> = store.data.map { it[KEY_DICTIONARY_APP].orEmpty() }
+
+    suspend fun setDictionaryApp(packageName: String) {
+        store.edit { it[KEY_DICTIONARY_APP] = packageName }
+    }
+
     companion object {
         private val KEY_READER_FONT = stringPreferencesKey("reader_font")
         private val KEY_READER_SIZE = androidx.datastore.preferences.core.intPreferencesKey("reader_font_size")
@@ -195,5 +202,6 @@ class SettingsStore(context: Context) {
 
         private val KEY_PINNED = stringPreferencesKey("pinned_apps")
         private val KEY_ART = booleanPreferencesKey("botanical_art")
+        private val KEY_DICTIONARY_APP = stringPreferencesKey("dictionary_app")
     }
 }

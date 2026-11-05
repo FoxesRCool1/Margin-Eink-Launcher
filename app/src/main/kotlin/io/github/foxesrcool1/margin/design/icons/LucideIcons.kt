@@ -120,6 +120,15 @@ object Lucide {
         ),
     )
 
+    val BookA = LucideIcon(
+        name = "book-a",
+        strokes = listOf(
+            "M4 19.5 v-15 A2.5 2.5 0 0 1 6.5 2 H19 a1 1 0 0 1 1 1 v18 a1 1 0 0 1 -1 1 H6.5 a1 1 0 0 1 0 -5 H20",
+            "m8 13 l4 -7 l4 7",
+            "M9.1 11 h5.7",
+        ),
+    )
+
     val BookOpen = LucideIcon(
         name = "book-open",
         strokes = listOf(

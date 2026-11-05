@@ -27,26 +27,42 @@ sealed interface ContinueTarget {
 }
 
 /**
- * Finds the thing the user was last busy with: the book read last or the
- * note edited last, whichever came later. Reads the disk, so it runs off the
- * main thread.
+ * Finds the things the user was last busy with: the books read last and the
+ * notes edited last, merged by date, newest first. Reads the disk, so it runs
+ * off the main thread.
  */
 class ContinueFinder(private val data: DataRepository) {
 
-    fun find(): ContinueTarget? {
-        val lastBook = BooksRepository(data).lastRead()
-        val lastNote = NotesRepository(data).newest()
+    fun find(): ContinueTarget? = findRecent(1).firstOrNull()
 
-        if (lastBook != null && (lastNote == null || lastBook.second > lastNote.stored.lastModified)) {
-            val book = lastBook.first
-            val progress = ReadingRepository(data).progressOf(book.bookId)
-            return ContinueTarget.Book(book, ReadingProgress.mark(progress))
-        }
-        if (lastNote == null) return null
-        return if (StorageLayout.isInkNote(lastNote.name)) {
-            ContinueTarget.InkNote(lastNote.path, lastNote.title)
-        } else {
-            ContinueTarget.TypedNote(lastNote.path, lastNote.title)
-        }
+    /**
+     * The [count] things the user was last busy with, newest first. A book
+     * stands in for the day the reader last saved its place, and a note for
+     * the day its file was last changed. A thing the user has not touched
+     * does not come up.
+     */
+    fun findRecent(count: Int = 2): List<ContinueTarget> {
+        if (count <= 0) return emptyList()
+        val books = BooksRepository(data).recentlyRead(count)
+        val notes = NotesRepository(data).newest(count)
+
+        val dated: List<Pair<Long, ContinueTarget>> =
+            books.map { (book, readAt) ->
+                val progress = ReadingRepository(data).progressOf(book.bookId)
+                readAt to ContinueTarget.Book(book, ReadingProgress.mark(progress))
+            } + notes.map { note ->
+                note.stored.lastModified to
+                    if (StorageLayout.isInkNote(note.name)) {
+                        ContinueTarget.InkNote(note.path, note.title)
+                    } else {
+                        ContinueTarget.TypedNote(note.path, note.title)
+                    }
+            }
+
+        return dated
+            .sortedByDescending { it.first }
+            .map { it.second }
+            .distinctBy { it.path }
+            .take(count)
     }
 }

@@ -46,6 +46,9 @@ object SpeedWatch {
 
         /** Reading the window settings before the first frame. It blocks the main thread. */
         const val WINDOW_SETTINGS = 60L
+
+        /** Reading the notes, the journal, and the highlights, and working out the match. */
+        const val SEARCH = 800L
     }
 
     /** Writes a "Slow:" line when [millis] is over [budget], and nothing when it is not. */

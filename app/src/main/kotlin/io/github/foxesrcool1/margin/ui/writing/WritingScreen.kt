@@ -27,6 +27,7 @@ import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.ui.ink.InkExport
 import io.github.foxesrcool1.margin.core.notes.NoteEntry
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
+import io.github.foxesrcool1.margin.core.notes.timestampedNoteName
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.core.window.findActivity
@@ -132,7 +133,9 @@ fun WritingScreen(
 
     fun openNewNote(title: String) {
         scope.launch {
-            val path = withContext(AppDispatchers.io) { notes.createNote(folder, title) }
+            // No title is fine, the same as a handwritten note: it gets a name from the time.
+            val name = title.ifBlank { "Handwritten " + timestampedNoteName() }
+            val path = withContext(AppDispatchers.io) { notes.createNote(folder, name) }
             refresh++
             if (path != null) {
                 onOpenNote(path)
@@ -145,9 +148,7 @@ fun WritingScreen(
     fun openNewInkNote(title: String, template: PageTemplate) {
         scope.launch {
             // A pen user may have no keyboard in reach. No title is fine.
-            val name = title.ifBlank {
-                "Handwritten " + java.time.LocalDateTime.now().withNano(0).toString().replace(':', '-')
-            }
+            val name = title.ifBlank { "Handwritten " + timestampedNoteName() }
             val path = withContext(AppDispatchers.io) { inkNotes.create(folder, name, template) }
             refresh++
             if (path != null) {
@@ -186,12 +187,13 @@ fun WritingScreen(
         actions = {
             IconPressButton(icon = Lucide.FilePlus, label = "New note", bordered = true, onClick = { choosingKind = true })
             IconPressButton(icon = Lucide.FolderPlus, label = "New folder", onClick = { addingFolder = true })
-            IconPressButton(
-                icon = Lucide.FolderUp,
-                label = "Up one folder",
-                enabled = !notes.isRoot(folder),
-                onClick = { folder = notes.parentOf(folder) },
-            )
+            if (!notes.isRoot(folder)) {
+                IconPressButton(
+                    icon = Lucide.FolderUp,
+                    label = "Up one folder",
+                    onClick = { folder = notes.parentOf(folder) },
+                )
+            }
         },
     ) {
         if (marked != null || status != null) {
@@ -243,7 +245,7 @@ fun WritingScreen(
             items = rows,
             pageSize = ROWS_PER_PAGE,
             rowHeight = EinkDimens.rowTwoLines,
-            emptyText = "No notes in here yet",
+            emptyText = "No notes yet",
             modifier = Modifier.weight(1f),
         ) { _, row ->
             NoteRow(
@@ -327,8 +329,9 @@ fun WritingScreen(
 
     if (addingNote) {
         TextPromptDialog(
-            title = "New note",
+            title = "Name, or leave it empty",
             confirmText = "Write",
+            allowEmpty = true,
             onConfirm = { title ->
                 addingNote = false
                 openNewNote(title)
@@ -385,9 +388,9 @@ fun WritingScreen(
         ConfirmDialog(
             title = "Delete ${beingDeleted.name}?",
             message = if (beingDeleted.isFolder) {
-                "The folder and everything in it goes away and cannot come back."
+                "Everything in it goes too. This cannot be undone."
             } else {
-                "The file goes away and cannot come back."
+                "This cannot be undone."
             },
             confirmText = "Delete",
             cancelText = "Keep",

@@ -58,6 +58,7 @@ import io.github.foxesrcool1.margin.ui.ink.InkCanvasView
 import io.github.foxesrcool1.margin.ui.journal.JournalScreen
 import io.github.foxesrcool1.margin.ui.log.LogViewerScreen
 import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
+import io.github.foxesrcool1.margin.ui.search.SearchScreen
 import io.github.foxesrcool1.margin.ui.settings.SettingsScreen
 import io.github.foxesrcool1.margin.ui.update.UpdateScreen
 import io.github.foxesrcool1.margin.ui.writing.NoteEditorScreen
@@ -70,8 +71,8 @@ interface PaneHost {
     /** The book in the main half, for the choice "notes of this book". Null when the main half is no book. */
     val bookTitle: String? get() = null
 
-    /** A book was chosen in the second half. See [openBookBeside]. */
-    fun openBook(book: LibraryBook)
+    /** A book was chosen in the second half. See [openBookBeside]. [highlightId] is the highlight to open it at, or null. */
+    fun openBook(book: LibraryBook, highlightId: String? = null)
 
     /** The handwriting canvas the second half shows, or null, so the screen can point the fast pen at it. */
     fun paneInk(canvas: InkCanvasView?)
@@ -129,6 +130,8 @@ private fun PageInPane(page: PanePage, split: SplitState, host: PaneHost) {
 
         is PanePage.BookNotes -> NotePane(bookTitle = page.bookTitle, onInkCanvas = host::paneInk, onBack = split::back)
 
+        is PanePage.JournalDay -> JournalScreen(initialDate = page.date, onBack = split::home)
+
         is PanePage.TypedNote -> NoteEditorScreen(notePath = page.path, onClose = split::back)
 
         is PanePage.InkNote -> Column(modifier = Modifier.fillMaxSize()) {
@@ -161,6 +164,16 @@ private fun PageInPane(page: PanePage, split: SplitState, host: PaneHost) {
             )
             LauncherRoute.Log -> LogViewerScreen(onBack = split::back)
             LauncherRoute.Update -> UpdateScreen(onBack = split::back)
+            LauncherRoute.Search -> SearchScreen(
+                onBack = split::home,
+                onOpenNote = { split.show(PanePage.TypedNote(it)) },
+                onOpenInkNote = { path, title -> split.show(PanePage.InkNote(path, title)) },
+                onOpenBook = { book, highlightId -> host.openBook(book, highlightId) },
+                onOpenJournal = { day ->
+                    if (day != null) split.show(PanePage.JournalDay(day))
+                    else split.show(PanePage.Tab(LauncherRoute.Journal))
+                },
+            )
         }
     }
 }
@@ -180,7 +193,7 @@ private class PaneOpener(
         split.show(PanePage.InkNote(path, title, template))
     }
 
-    override fun openBook(book: LibraryBook) = host.openBook(book)
+    override fun openBook(book: LibraryBook, highlightId: String?) = host.openBook(book, highlightId)
 
     override fun openApp(entry: LauncherEntry): Boolean = AdjacentApps.open(context.findActivity(), entry, host)
 }
@@ -203,12 +216,13 @@ fun openBookBeside(
     split: SplitState,
     book: LibraryBook,
     host: PaneHost,
+    highlightId: String? = null,
 ) {
     val main = split.main()
     val carry = if (main != null) SplitCarry(main, swapped = !split.swapped) else split.carry()
     AppLog.i(TAG, "Opening ${book.path} from the second half, taking $carry along")
     runCatching {
-        activity.startActivity(bookIntent(activity, book).withSplit(carry))
+        activity.startActivity(bookIntent(activity, book, highlightId).withSplit(carry))
         host.leave()
     }.onFailure { AppLog.e(TAG, "Could not open ${book.path}", it) }
 }

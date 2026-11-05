@@ -256,13 +256,14 @@ private fun InkPagesDialog(state: PdfUiState, actions: PdfActions) {
                 }
                 HairlineDivider(color = EinkColors.Faded)
             }
-            Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-            InvertPressButton(
-                text = "Export as Markdown",
-                icon = Lucide.Share,
-                enabled = state.inkPages.isNotEmpty(),
-                onClick = actions::exportNotes,
-            )
+            if (state.inkPages.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(EinkDimens.targetGap))
+                InvertPressButton(
+                    text = "Export as Markdown",
+                    icon = Lucide.Share,
+                    onClick = actions::exportNotes,
+                )
+            }
         }
     }
 }

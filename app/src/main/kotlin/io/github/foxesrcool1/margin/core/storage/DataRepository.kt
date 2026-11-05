@@ -134,9 +134,10 @@ class DataRepository(val store: FileStore) {
     fun writeNote(relativePath: String, text: String): Boolean =
         store.writeText(relativePath, text)
 
+    /** A free path for a new typed note: the wanted name, or a numbered one when it is taken. */
     fun newNotePath(folder: String, title: String): String {
         val name = "${StorageLayout.safeName(title)}.${StorageLayout.TYPED_NOTE_EXTENSION}"
-        return RelativePaths.join(RelativePaths.join(StorageLayout.NOTES, folder), name)
+        return freePath(RelativePaths.join(RelativePaths.join(StorageLayout.NOTES, folder), name))
     }
 
     /**

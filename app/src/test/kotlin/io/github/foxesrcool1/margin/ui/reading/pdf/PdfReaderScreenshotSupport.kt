@@ -49,7 +49,7 @@ object PdfReaderScreenshotSupport {
         val host = remember {
             object : PaneHost {
                 override val bookTitle: String get() = state.title
-                override fun openBook(book: LibraryBook) = Unit
+                override fun openBook(book: LibraryBook, highlightId: String?) = Unit
                 override fun paneInk(canvas: InkCanvasView?) = Unit
             }
         }

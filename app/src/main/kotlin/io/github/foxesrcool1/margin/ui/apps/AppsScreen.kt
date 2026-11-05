@@ -147,6 +147,7 @@ fun AppsScreen(
     var renamingFolder by remember { mutableStateOf<AppFolder?>(null) }
     var deletingFolder by remember { mutableStateOf<AppFolder?>(null) }
     var addingFolder by remember { mutableStateOf(false) }
+    var pinFullNotice by remember { mutableStateOf(false) }
 
     val pinnedKeys by settings.pinnedApps.collectAsStateWithLifecycle(initialValue = emptyList())
     val listState = rememberPagedListState()
@@ -307,7 +308,7 @@ fun AppsScreen(
                 items = firstPage,
                 pageSize = PAGE_SIZE,
                 rowHeight = EinkDimens.rowOneLine,
-                emptyText = "Nothing pinned yet. Hold an app on the A to Z page and choose Pin.",
+                emptyText = "No pinned apps yet. Hold an app on the A to Z page and choose Pin.",
                 modifier = Modifier.weight(1f),
             ) { _, row ->
                 when (row) {
@@ -382,20 +383,25 @@ fun AppsScreen(
         val pinnedFull = pinnedKeys.size >= SettingsStore.MAX_PINNED
         OptionsDialog(
             title = selected.label,
-            onDismiss = { menuFor = null },
+            message = if (pinFullNotice) "Pinned is full" else null,
+            onDismiss = {
+                menuFor = null
+                pinFullNotice = false
+            },
             options = listOf(
                 DialogOption(
-                    label = when {
-                        isPinned -> "Unpin"
-                        pinnedFull -> "The pinned list is full"
-                        else -> "Pin"
-                    },
+                    label = if (isPinned) "Unpin" else "Pin",
                     icon = if (isPinned) Lucide.PinOff else Lucide.Pin,
-                    enabled = isPinned || !pinnedFull,
                     onSelect = {
-                        scope.launch { settings.togglePinned(selected.key) }
-                        AppLog.i(TAG, "Toggled pin for ${selected.key}")
-                        menuFor = null
+                        if (!isPinned && pinnedFull) {
+                            // The list is full: say so and keep the menu open.
+                            pinFullNotice = true
+                        } else {
+                            scope.launch { settings.togglePinned(selected.key) }
+                            AppLog.i(TAG, "Toggled pin for ${selected.key}")
+                            menuFor = null
+                            pinFullNotice = false
+                        }
                     },
                 ),
                 DialogOption(
@@ -499,7 +505,7 @@ fun AppsScreen(
     if (beingDeleted != null) {
         ConfirmDialog(
             title = "Delete ${beingDeleted.name}?",
-            message = "Only the folder goes. The apps in it stay on the tablet.",
+            message = "The apps stay on the tablet.",
             confirmText = "Delete",
             cancelText = "Keep",
             onConfirm = {

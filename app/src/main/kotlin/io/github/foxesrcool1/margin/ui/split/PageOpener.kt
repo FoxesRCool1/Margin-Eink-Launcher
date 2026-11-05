@@ -41,7 +41,13 @@ interface PageOpener {
      */
     fun openTypedNote(path: String, createdWith: String? = null)
     fun openInkNote(path: String, title: String, template: PageTemplate = PageTemplate.Blank)
-    fun openBook(book: LibraryBook)
+
+    /**
+     * [highlightId] is the highlight to open the book at, from a search hit.
+     * Null opens it where the reader left it. The EPUB reader takes it, and a
+     * PDF book ignores it.
+     */
+    fun openBook(book: LibraryBook, highlightId: String? = null)
 
     /** False when the app could not be started. */
     fun openApp(entry: LauncherEntry): Boolean
@@ -78,8 +84,8 @@ class ScreenPageOpener(
         start("the ink note $path") { InkNoteActivity.intent(context, path, title, template) }
     }
 
-    override fun openBook(book: LibraryBook) {
-        start(book.path) { bookIntent(context, book) }
+    override fun openBook(book: LibraryBook, highlightId: String?) {
+        start(book.path) { bookIntent(context, book, highlightId) }
     }
 
     override fun openApp(entry: LauncherEntry): Boolean = AppsRepository(context).launch(entry)
@@ -140,11 +146,12 @@ class ScreenPageOpener(
     }
 }
 
-fun bookIntent(context: Context, book: LibraryBook): Intent =
+fun bookIntent(context: Context, book: LibraryBook, highlightId: String? = null): Intent =
     if (book.isPdf) {
+        // A PDF book has no highlights to open at, so the id is left out.
         PdfReaderActivity.intent(context, book.path, book.bookId, book.metadata.title)
     } else {
-        EpubReaderActivity.intent(context, book.path, book.bookId, book.metadata.title)
+        EpubReaderActivity.intent(context, book.path, book.bookId, book.metadata.title, highlightId)
     }
 
 /** Puts the split screen into an intent, for the screen it starts. Nothing when [carry] is null. */

@@ -148,4 +148,61 @@ class ContinueFinderTest {
 
         assertNull(finder.find())
     }
+
+    // -- The list of recent things ---------------------------------------------
+
+    @Test
+    fun `findRecent lists the newest book and note first`() {
+        val bookId = addBook()
+        readBook(bookId, 0.12, 1)
+        val notes = NotesRepository(data)
+        val notePath = notes.createNote(notes.rootPath, "Garden plan")!!
+        setAge(notePath, 2)
+
+        val recent = finder.findRecent(2)
+        assertEquals(2, recent.size)
+        assertEquals(ContinueTarget.TypedNote(notePath, "Garden plan"), recent[0])
+        assertTrue(recent[1] is ContinueTarget.Book)
+        assertEquals("Walden", recent[1].title)
+    }
+
+    @Test
+    fun `findRecent keeps the newest first when the book was read last`() {
+        val notes = NotesRepository(data)
+        val notePath = notes.createNote(notes.rootPath, "Garden plan")!!
+        setAge(notePath, 1)
+        val bookId = addBook()
+        readBook(bookId, 0.12, 2)
+
+        val recent = finder.findRecent(2)
+        assertEquals(2, recent.size)
+        assertTrue(recent[0] is ContinueTarget.Book)
+        assertEquals(ContinueTarget.TypedNote(notePath, "Garden plan"), recent[1])
+    }
+
+    @Test
+    fun `findRecent never lists the same thing twice`() {
+        val bookId = addBook()
+        readBook(bookId, 0.12, 1)
+
+        val recent = finder.findRecent(2)
+        assertEquals(1, recent.size)
+        assertEquals(1, recent.distinctBy { it.path }.size)
+    }
+
+    @Test
+    fun `findRecent with nothing touched is empty`() {
+        assertTrue(finder.findRecent(2).isEmpty())
+    }
+
+    @Test
+    fun `find is the newest of findRecent`() {
+        val bookId = addBook()
+        readBook(bookId, 0.12, 1)
+        val notes = NotesRepository(data)
+        val notePath = notes.createNote(notes.rootPath, "Garden plan")!!
+        setAge(notePath, 2)
+
+        assertEquals(finder.findRecent(1).firstOrNull(), finder.find())
+    }
 }

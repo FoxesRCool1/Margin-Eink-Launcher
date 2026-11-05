@@ -61,7 +61,7 @@ class NoteEditorActivity : ComponentActivity() {
         intent.splitCarry()?.let { split.open(it.page, it.swapped) }
 
         val paneHost = object : PaneHost {
-            override fun openBook(book: LibraryBook) = openBookBeside(this@NoteEditorActivity, split, book, this)
+            override fun openBook(book: LibraryBook, highlightId: String?) = openBookBeside(this@NoteEditorActivity, split, book, this, highlightId)
 
             override fun paneInk(canvas: InkCanvasView?) = paneInk.serve(canvas)
 

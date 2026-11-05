@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import io.github.foxesrcool1.margin.design.components.EinkTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -21,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.foxesrcool1.margin.core.reading.DictionaryApp
 import io.github.foxesrcool1.margin.core.reading.Highlight
 import io.github.foxesrcool1.margin.core.reading.ReadingLog
 import io.github.foxesrcool1.margin.core.reading.ReadingProgress
@@ -30,14 +32,17 @@ import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.ConfirmDialog
+import io.github.foxesrcool1.margin.design.components.DialogMaxWidth
+import io.github.foxesrcool1.margin.design.components.EinkDialog
 import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.IconPressButton
+import io.github.foxesrcool1.margin.design.components.PagedList
 import io.github.foxesrcool1.margin.design.components.einkFieldBorder
+import io.github.foxesrcool1.margin.design.components.einkPanel
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.RotateButton
-import io.github.foxesrcool1.margin.design.components.PagedList
 
 /**
  * Everything the reader draws on top of the page.
@@ -58,6 +63,13 @@ fun ReaderChrome(state: ReaderUiState, actions: ReaderActions) {
             }
 
             state.selecting -> SelectionBar(actions, Modifier.align(Alignment.BottomCenter))
+
+            state.dictionaryApps != null -> DictionaryChooser(
+                words = state.dictionaryWords,
+                apps = state.dictionaryApps!!,
+                onPick = { actions.lookUpIn(it) },
+                onDismiss = actions::cancelLookUp,
+            )
 
             else -> when (val panel = state.panel) {
                 ReaderPanel.None -> Unit
@@ -148,8 +160,50 @@ private fun SelectionBar(actions: ReaderActions, modifier: Modifier = Modifier) 
         ) {
             IconPressButton(icon = Lucide.Highlighter, label = "Highlight", bordered = true, onClick = actions::highlight)
             IconPressButton(icon = Lucide.MessageSquarePlus, label = "Highlight and add a note", bordered = true, onClick = actions::highlightWithNote)
+            IconPressButton(icon = Lucide.BookA, label = "Look up", bordered = true, onClick = actions::lookUp)
             Spacer(modifier = Modifier.weight(1f))
             IconPressButton(icon = Lucide.X, label = "Cancel", onClick = actions::cancelSelection)
+        }
+    }
+}
+
+/**
+ * More than one dictionary app is installed, so the words wait here for a
+ * choice. The last chosen app comes first, so a second look up is one tap.
+ */
+@Composable
+fun DictionaryChooser(
+    words: String,
+    apps: List<DictionaryApp>,
+    onPick: (DictionaryApp) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    EinkDialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = DialogMaxWidth)
+                .fillMaxWidth(0.86f)
+                .einkPanel()
+                .padding(EinkDimens.blockGap),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EinkText(text = "Look up in", style = EinkType.title, maxLines = 1, modifier = Modifier.weight(1f))
+                IconPressButton(icon = Lucide.X, label = "Cancel the look up", onClick = onDismiss)
+            }
+            Spacer(modifier = Modifier.height(EinkDimens.targetGap))
+            PagedList(
+                items = apps,
+                pageSize = 5,
+                rowHeight = EinkDimens.rowOneLine,
+                emptyText = "No dictionary app found",
+                modifier = Modifier.weight(1f),
+            ) { _, app ->
+                EinkRow(onClick = { onPick(app) }) { pressed ->
+                    val colour = if (pressed) EinkColors.Paper else EinkColors.Ink
+                    EinkText(text = app.label, style = EinkType.rowTitle.copy(color = colour), maxLines = 1)
+                }
+                HairlineDivider(color = EinkColors.Faded)
+            }
         }
     }
 }
@@ -209,12 +263,13 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
         title = "Notes",
         onClose = { actions.show(ReaderPanel.None) },
         actions = {
-            IconPressButton(
-                icon = Lucide.Share,
-                label = "Export the notes as Markdown",
-                enabled = state.annotations.highlights.isNotEmpty(),
-                onClick = actions::exportNotes,
-            )
+            if (state.annotations.highlights.isNotEmpty()) {
+                IconPressButton(
+                    icon = Lucide.Share,
+                    label = "Export the notes as Markdown",
+                    onClick = actions::exportNotes,
+                )
+            }
         },
     ) {
         state.notice?.let {
@@ -277,7 +332,7 @@ private fun HighlightPanel(state: ReaderUiState, highlightId: String, actions: R
                     selected = !highlight?.inkNotePath.isNullOrBlank(),
                     onClick = { actions.handwrite(highlightId) },
                 )
-                IconPressButton(icon = Lucide.Trash2, label = "Remove the highlight", onClick = { asking = true })
+                IconPressButton(icon = Lucide.Trash2, label = "Delete the highlight", onClick = { asking = true })
                 Spacer(modifier = Modifier.weight(1f))
                 IconPressButton(icon = Lucide.X, label = "Close", onClick = { actions.show(ReaderPanel.None) })
             }
@@ -286,9 +341,9 @@ private fun HighlightPanel(state: ReaderUiState, highlightId: String, actions: R
     if (asking) {
         val hasNote = !highlight?.note.isNullOrBlank() || !highlight?.inkNotePath.isNullOrBlank()
         ConfirmDialog(
-            title = "Remove this highlight?",
+            title = "Delete this highlight?",
             message = if (hasNote) "Its note goes too." else "This cannot be undone.",
-            confirmText = "Remove",
+            confirmText = "Delete",
             cancelText = "Keep",
             onConfirm = {
                 asking = false
@@ -347,7 +402,7 @@ private fun TextPanel(state: ReaderUiState, actions: ReaderActions, modifier: Mo
                 StepRow("Size", "${settings.fontSizePercent} %", { actions.change(settings.smaller()) }, { actions.change(settings.larger()) })
                 StepRow("Margins", "${settings.marginPercent} %", { actions.change(settings.narrowerMargins()) }, { actions.change(settings.widerMargins()) })
                 if (settings.font != ReaderSettings.FONT_PUBLISHER) {
-                    StepRow("Line spacing", "${settings.lineHeightPercent} %", { actions.change(settings.tighterLines()) }, { actions.change(settings.looserLines()) })
+                    StepRow("Line Spacing", "${settings.lineHeightPercent} %", { actions.change(settings.tighterLines()) }, { actions.change(settings.looserLines()) })
                     SettingRow("Justify", if (settings.justify) "On" else "Off") {
                         NextValue("Justify on or off") { actions.change(settings.copy(justify = !settings.justify)) }
                     }
@@ -356,10 +411,10 @@ private fun TextPanel(state: ReaderUiState, actions: ReaderActions, modifier: Mo
                 SettingRow("Highlights", if (settings.underlineHighlights) "Underline" else "Grey block") {
                     NextValue("Next highlight style") { actions.change(settings.copy(underlineHighlights = !settings.underlineHighlights)) }
                 }
-                SettingRow("Full refresh", if (settings.refreshEveryPages == 0) "Never" else "Every ${settings.refreshEveryPages} pages") {
+                SettingRow("Full Refresh", if (settings.refreshEveryPages == 0) "Never" else "Every ${settings.refreshEveryPages} pages") {
                     NextValue("Next refresh setting") { actions.change(settings.nextRefresh()) }
                 }
-                SettingRow("Daily goal", if (settings.goalMinutes == 0) "None" else "${settings.goalMinutes} minutes") {
+                SettingRow("Daily Goal", if (settings.goalMinutes == 0) "None" else "${settings.goalMinutes} minutes") {
                     NextValue("Next daily goal") { actions.change(settings.nextGoal()) }
                 }
             }

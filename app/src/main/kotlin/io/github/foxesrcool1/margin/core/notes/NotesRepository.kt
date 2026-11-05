@@ -70,11 +70,20 @@ class NotesRepository(private val data: DataRepository) {
      * The typed or handwritten note that was changed last, in any folder, or
      * null when there is none. Home offers it as a way back to the writing.
      */
-    fun newest(): NoteEntry? =
-        data.store.listFilesRecursively(rootPath)
+    fun newest(): NoteEntry? = newest(1).firstOrNull()
+
+    /**
+     * The typed or handwritten notes changed most recently, in any folder,
+     * newest first.
+     */
+    fun newest(count: Int): List<NoteEntry> {
+        if (count <= 0) return emptyList()
+        return data.store.listFilesRecursively(rootPath)
             .filter { StorageLayout.isTypedNote(it.name) || StorageLayout.isInkNote(it.name) }
-            .maxByOrNull { it.lastModified }
-            ?.let(::describe)
+            .sortedByDescending { it.lastModified }
+            .take(count)
+            .map(::describe)
+    }
 
     fun read(path: String): String = data.store.readText(path).orEmpty()
 

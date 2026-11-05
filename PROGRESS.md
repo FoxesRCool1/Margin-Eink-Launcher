@@ -4,6 +4,65 @@ One section per step. Newest step at the top.
 
 ---
 
+## Search, Look Up, the document before, and a simpler UI
+
+Date: 2026-11-05. Branch `Dev`. The owner asked for the features from a web
+search about e-ink tablet software, and for a pass to make the app simpler.
+Decision 0029. Research in `docs/research/2026-11-eink-tablet-software.md`.
+
+### What was done
+
+1. **Search** on Home: typed notes, journal entries, highlights and their
+   notes, and the names of handwritten notes. A tap on a hit opens it.
+2. **Look Up** in the EPUB selection bar sends the words to an installed
+   dictionary app.
+3. **"Before" on Home**: the document opened before the one in Continue.
+4. **Fewer grey controls.** Controls that cannot be used are hidden.
+5. **Shorter, consistent words** in confirms, empty pages and errors.
+6. **A typed note's name is optional,** like a handwritten one.
+7. Highlight export to Markdown was on the list but already existed.
+
+### What works
+
+- The debug build, all unit and screenshot tests, lint. New tests: the
+  search rules, the order of Continue and Before. New screenshots: Search
+  upright, on its side and in a split half; Home with Before; the selection
+  bar with Look Up.
+
+Later the same day, before the 1.3.0 release: a journal hit opens its day,
+a highlight hit opens the book at the highlight, Back from a hit returns to
+the results, swipe up on Home opens Apps and swipe down opens Search, Look Up
+also finds ColorDict style dictionaries, and untitled notes get a readable
+date name. Run in the emulator: every flow above, by hand, with no crash.
+
+### What does not work yet, or is not known
+
+- Nothing here has run on the tablet.
+- Look Up needs an app that takes "process text" or the ColorDict intent.
+  If the ViWoods has none, it says "No dictionary app found".
+- The emulator log showed one `Leak: LeakedClosable` line with no stack,
+  after a book was open. The search code closes what it reads. Watch for it
+  in the tablet log.
+
+### Test on the tablet
+
+1. Home, Search: search a word from a note, a journal entry and a
+   highlight. Each hit opens the right thing. Look for a `Slow:` line.
+2. In a book, hold a word, press Look Up (the book with an A). A dictionary
+   app opens, or the notice says none is found.
+3. Open a book, then a note, then go Home. Continue shows the note, Before
+   shows the book. Tap Before.
+4. Write, at the top folder: no "Up one folder" button. Inside a folder it
+   is there.
+5. Write, New note, Typed, leave the name empty, Write. A note opens with a
+   default name.
+6. Swipe up on Home: Apps. Swipe down: Search. A swipe that starts at the
+   top edge still shows the status bar.
+7. Search a word in a highlight, open it: the book opens at that place.
+   Search a journal word, open it, press Back: the results are still there.
+
+---
+
 ## The pen pass: a smoother line, less delay, fewer taps
 
 Date: 2026-10-23. Branch `Dev`. The owner asked for the app to be more

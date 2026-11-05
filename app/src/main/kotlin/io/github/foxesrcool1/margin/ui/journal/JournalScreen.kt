@@ -22,6 +22,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.foxesrcool1.margin.core.ink.PageTemplate
@@ -86,6 +88,8 @@ fun JournalScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     fixedToday: LocalDate? = null,
+    /** The day to open on, such as the day of a journal entry the search found. Null opens on today. */
+    initialDate: LocalDate? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -109,11 +113,14 @@ fun JournalScreen(
     val today = fixedToday ?: remember(boundaryHour, refresh) { dateNow() }
 
     var mode by remember { mutableStateOf(JournalMode.Day) }
-    var viewDate by remember { mutableStateOf(today) }
+    // The day the screen opened on: the day handed to it, or today. When that
+    // day changes, the view and the anchor come back to it.
+    val start = initialDate ?: today
+    var viewDate by remember(initialDate) { mutableStateOf(start) }
     var shownToday by remember { mutableStateOf(today) }
     // The day of the month the user chose. Month stepping clamps to short
     // months, and this brings the 31st back after a February.
-    var anchorDay by remember { mutableIntStateOf(today.dayOfMonth) }
+    var anchorDay by remember(initialDate) { mutableIntStateOf(start.dayOfMonth) }
     // The habits and the routine belong to the day on show. A day that has not
     // come yet cannot be ticked. On "today" the tap works out the date again,
     // for the reason given at dateNow: the page then moves to the new day.
@@ -367,7 +374,7 @@ fun JournalScreen(
                 items = routineRows,
                 pageSize = 4,
                 rowHeight = RoutineRowHeight,
-                emptyText = "No routine yet. Press the plus sign to add the first item.",
+                emptyText = "No routine yet. Press the plus sign to add one.",
                 modifier = Modifier.weight(1f),
             ) { index, status ->
                 RoutineRow(
@@ -505,6 +512,7 @@ fun JournalScreen(
         OptionsDialog(
             title = selected.habit.name,
             onDismiss = { optionsFor = null },
+            message = "Longest streak: ${selected.longestStreak}",
             options = listOf(
                 DialogOption(label = "Rename", icon = Lucide.Pencil) {
                     renaming = selected
@@ -519,12 +527,6 @@ fun JournalScreen(
                     }
                     optionsFor = null
                 },
-                DialogOption(
-                    label = "Longest streak: ${selected.longestStreak}",
-                    enabled = false,
-                    icon = Lucide.Flame,
-                    onSelect = { },
-                ),
             ),
         )
     }
@@ -651,6 +653,12 @@ private fun DayEntry(
     onHandwrite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The field takes the focus as the edit begins, so the keyboard comes at
+    // once. Without this the user taps the field a second time.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(editing) {
+        if (editing) focus.requestFocus()
+    }
     Column(modifier = modifier) {
         // The count sits in the label row. There is no room for a row of its
         // own under the entry: upright it pushed a habit off the page, and in
@@ -704,6 +712,7 @@ private fun DayEntry(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 120.dp, max = 260.dp)
+                    .focusRequester(focus)
                     .einkFieldBorder()
                     .padding(14.dp),
             )

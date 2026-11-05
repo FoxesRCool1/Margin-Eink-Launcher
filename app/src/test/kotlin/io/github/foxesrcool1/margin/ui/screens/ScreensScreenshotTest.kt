@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -17,6 +18,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -34,7 +39,9 @@ import io.github.foxesrcool1.margin.core.log.LogLevel
 import io.github.foxesrcool1.margin.core.log.LogLine
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
+import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.reading.BookAnnotations
+import io.github.foxesrcool1.margin.core.reading.Highlight
 import io.github.foxesrcool1.margin.core.reading.ReadingRepository
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
@@ -59,6 +66,7 @@ import io.github.foxesrcool1.margin.ui.journal.JournalScreen
 import io.github.foxesrcool1.margin.ui.log.LogViewerScreen
 import io.github.foxesrcool1.margin.ui.reading.ReadingScreen
 import io.github.foxesrcool1.margin.ui.reading.pdf.PdfReaderScreenshotSupport
+import io.github.foxesrcool1.margin.ui.search.SearchScreen
 import io.github.foxesrcool1.margin.ui.settings.PEN_MODES
 import io.github.foxesrcool1.margin.ui.settings.PEN_MODE_HELP
 import io.github.foxesrcool1.margin.ui.settings.REDRAW_DELAYS
@@ -162,7 +170,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
     // -- Home -------------------------------------------------------------------------
 
-    /** A book that was read a little way and a note written after it: the Continue row finds the note. */
+    /** A book read a little way and a note written after it: the Continue row finds the note. */
     private fun seedContinue(bookLast: Boolean = true) {
         val data = DataRoot.repository(context)
         val bookId = StorageLayout.bookIdFor("Middlemarch.pdf", 2048)
@@ -178,6 +186,29 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
             .setLastModified(1_000_000_000_000L + if (bookLast) 60_000L else 0L)
     }
 
+    /**
+     * A book read last, a note edited before it, and a second book read
+     * before that: the Continue row finds the book, and the Before row the
+     * note.
+     */
+    private fun seedTwoRecent() {
+        val data = DataRoot.repository(context)
+        val bookId = StorageLayout.bookIdFor("Middlemarch.pdf", 2048)
+        data.store.write(StorageLayout.bookPath("Middlemarch.pdf"), ByteArray(2048))
+        ReadingRepository(data).save(bookId, BookAnnotations(progress = 0.12))
+        val oldBookId = StorageLayout.bookIdFor("Walden.pdf", 1024)
+        data.store.write(StorageLayout.bookPath("Walden.pdf"), ByteArray(1024))
+        ReadingRepository(data).save(oldBookId, BookAnnotations(progress = 0.45))
+        val notes = NotesRepository(data)
+        val path = notes.createNote(notes.rootPath, "Notes on the second chapter")!!
+        notes.write(path, "# Notes on the second chapter\n\nDorothea and the plans for the cottages.")
+        // Set the order by hand: all three files were made in the same second.
+        val root = java.io.File(data.store.displayPath)
+        java.io.File(root, StorageLayout.annotationsPath(bookId)).setLastModified(1_000_000_000_000L + 120_000L)
+        java.io.File(root, path).setLastModified(1_000_000_000_000L + 60_000L)
+        java.io.File(root, StorageLayout.annotationsPath(oldBookId)).setLastModified(1_000_000_000_000L)
+    }
+
     private fun continueTarget(): ContinueTarget? = ContinueFinder(DataRoot.repository(context)).find()
 
     @Test
@@ -191,6 +222,34 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     }
 
     /** The tablet's text size at double: the labels under the icons get smaller, not cut. */
+    /** A swipe up opens the Apps tab, a swipe down opens Search, and a tap does neither. */
+    @Test
+    fun homeSwipesOpenAppsAndSearch() {
+        var up = 0
+        var down = 0
+        var settings = 0
+        compose.setContent {
+            EinkTheme {
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = { settings++ },
+                    onSwipeUp = { up++ },
+                    onSwipeDown = { down++ },
+                    now = fixedTime,
+                    use24Hour = true,
+                    battery = 82,
+                    wifi = true,
+                )
+            }
+        }
+        compose.onRoot().performTouchInput { swipeUp() }
+        compose.onRoot().performTouchInput { swipeDown() }
+        compose.onNodeWithContentDescription("Settings").performClick()
+        assertEquals(1, up)
+        assertEquals(1, down)
+        assertEquals(1, settings)
+    }
+
     @Test
     fun homeAtDoubleTextSize() {
         compose.setContent {
@@ -248,7 +307,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                     onOpenSettings = {},
                     nextRoutineLabel = "Write the journal",
                     nextRoutinePart = PartOfDay.Evening,
-                    continueTarget = target,
+                    continueTargets = listOfNotNull(continueTarget()),
                     now = LocalDateTime.of(2026, 9, 19, 20, 59),
                     use24Hour = false,
                     battery = 82,
@@ -257,6 +316,27 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
             }
         }
         capture("home_continue_book")
+    }
+
+    /** Two recent things: the Continue row for the book, and the Before row for the note under it. */
+    @Test
+    fun homeWithTwoRecentThings() {
+        seedTwoRecent()
+        val recent = ContinueFinder(DataRoot.repository(context)).findRecent(2)
+        compose.setContent {
+            EinkTheme {
+                HomeScreen(
+                    onOpenTab = {},
+                    onOpenSettings = {},
+                    continueTargets = recent,
+                    now = LocalDateTime.of(2026, 9, 19, 9, 15),
+                    use24Hour = true,
+                    battery = 82,
+                    wifi = true,
+                )
+            }
+        }
+        capture("home_two_recent")
     }
 
     /** A note to continue (no percent) with a long title, 24 hour time. */
@@ -269,7 +349,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                 HomeScreen(
                     onOpenTab = {},
                     onOpenSettings = {},
-                    continueTarget = target,
+                    continueTargets = listOfNotNull(continueTarget()),
                     now = LocalDateTime.of(2026, 9, 19, 12, 30),
                     use24Hour = true,
                     battery = 64,
@@ -291,7 +371,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                     onOpenTab = {},
                     onOpenSettings = {},
                     nextRoutineLabel = "Read 30 minutes",
-                    continueTarget = target,
+                    continueTargets = listOfNotNull(continueTarget()),
                     now = fixedTime,
                     use24Hour = false,
                     battery = 9,
@@ -316,7 +396,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                     nextRoutineLabel = "Stretch",
                     nextRoutinePart = PartOfDay.Morning,
                     nextOpensSomething = false,
-                    continueTarget = target,
+                    continueTargets = listOfNotNull(continueTarget()),
                     now = fixedTime,
                     use24Hour = true,
                     battery = 50,
@@ -340,7 +420,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                     onOpenSettings = {},
                     nextRoutineLabel = "Stretch",
                     nextRoutinePart = PartOfDay.Morning,
-                    continueTarget = target,
+                    continueTargets = listOfNotNull(continueTarget()),
                     now = fixedTime,
                     use24Hour = true,
                     battery = 50,
@@ -434,7 +514,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.runOnUiThread { activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
 
-        compose.onNodeWithContentDescription("Up one folder").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Up one folder").assertDoesNotExist()
         assertFalse(wentHome)
     }
 
@@ -457,7 +537,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
 
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Up one folder").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Up one folder").assertDoesNotExist()
         assertFalse(wentToChoice)
 
         compose.onNodeWithContentDescription("Back").performClick()
@@ -477,6 +557,65 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
         waitForText("Walk outside")
         capture("journal_day")
+    }
+
+    /** A journal entry the search found opens the Journal on the day it was written on. */
+    @Test
+    fun journalOpensOnTheDayOfTheEntryTheSearchFound() {
+        seedJournal()
+        compose.setContent {
+            EinkTheme {
+                JournalScreen(onBack = {}, fixedToday = today, initialDate = LocalDate.of(2026, 9, 2))
+            }
+        }
+        waitForText("Walk outside")
+        compose.onNodeWithText("Wednesday 2 September").assertIsDisplayed()
+        capture("journal_day_of_search_hit")
+    }
+
+    /** A note, a journal line, and a highlight with a note: the three kinds the search finds. */
+    private fun seedSearch() {
+        val data = DataRoot.repository(context)
+        val notes = NotesRepository(data)
+        val path = notes.createNote(notes.rootPath, "Notes on the pond")!!
+        notes.write(path, "# Notes on the pond\n\nThe pond water stood still under the trees at dawn.")
+        data.writeJournalEntry(today, "A quiet morning. I read by the window until the rain stopped.")
+        val bookId = StorageLayout.bookIdFor("Walden.pdf", 2048)
+        data.store.write(StorageLayout.bookPath("Walden.pdf"), ByteArray(2048))
+        ReadingRepository(data).save(
+            bookId,
+            BookAnnotations(
+                title = "Walden",
+                highlights = listOf(
+                    Highlight(
+                        id = "h1",
+                        locator = JsonObject(emptyMap()),
+                        text = "I went to the woods to live deliberately",
+                        note = "Why I read this",
+                        progression = 0.1,
+                        chapter = "Economy",
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun search() {
+        seedSearch()
+        compose.setContent { EinkTheme { SearchScreen(onBack = {}, onOpenNote = {}, onOpenInkNote = { _, _ -> }, onOpenBook = { _, _ -> }, onOpenJournal = { }) } }
+        compose.onNodeWithText("").performTextInput("pond")
+        compose.onNodeWithContentDescription("Search").performClick()
+        waitForText("Notes on the pond")
+        capture("search")
+    }
+
+    @Test
+    fun searchSplitHalf() {
+        seedSearch()
+        split(PanePage.Tab(LauncherRoute.Search), "split_search") {
+            HomeScreen(onOpenTab = {}, onOpenSettings = {}, now = fixedTime, use24Hour = true, battery = 82, wifi = true)
+        }
     }
 
     /** The routine page, with a part of the day on some of the items. */
@@ -1014,7 +1153,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     // -- The split screen -----------------------------------------------------------------
 
     private val paneHost = object : PaneHost {
-        override fun openBook(book: LibraryBook) = Unit
+        override fun openBook(book: LibraryBook, highlightId: String?) = Unit
         override fun paneInk(canvas: InkCanvasView?) = Unit
     }
 
@@ -1049,7 +1188,7 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                 onOpenSettings = {},
                 nextRoutineLabel = "Write the journal",
                 nextRoutinePart = PartOfDay.Evening,
-                continueTarget = target,
+                continueTargets = listOfNotNull(target),
                 now = LocalDateTime.of(2026, 9, 19, 20, 59),
                 use24Hour = false,
                 battery = 72,

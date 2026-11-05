@@ -44,6 +44,19 @@
         <intent>
             <action android:name="android.settings.HOME_SETTINGS" />
         </intent>
+        <!--
+          The reader's "Look up" sends the selected words to a dictionary app.
+          The package manager can list those apps only if the app asks for
+          them here, on Android 11 and later.
+        -->
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+        <!-- The older ColorDict intent, taken by ColorDict, GoldenDict, Fora and Livio. -->
+        <intent>
+            <action android:name="colordict.intent.action.SEARCH" />
+        </intent>
     </queries>
 
     <application
