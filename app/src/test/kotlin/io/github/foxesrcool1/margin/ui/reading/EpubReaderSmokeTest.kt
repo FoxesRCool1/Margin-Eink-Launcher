@@ -9,6 +9,7 @@ import io.github.foxesrcool1.margin.ui.reading.epub.EpubOpener
 import io.github.foxesrcool1.margin.ui.reading.epub.EpubReaderActivity
 import io.github.foxesrcool1.margin.ui.reading.epub.toEpubPreferences
 import io.github.foxesrcool1.margin.ui.reading.epub.toJsonObject
+import io.github.foxesrcool1.margin.ui.reading.epub.pageStep
 import io.github.foxesrcool1.margin.ui.reading.epub.toLocator
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -211,5 +212,54 @@ class EpubReaderSmokeTest {
         }
         assertTrue("the book view was never added", manager.fragments.isNotEmpty())
         controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun `every web view the book makes keeps its network loads blocked`() {
+        val context = RuntimeEnvironment.getApplication()
+        writeEpub(File(DataRoot.folder(context), "books/test.epub"))
+
+        val controller = runCatching {
+            Robolectric.buildActivity(
+                EpubReaderActivity::class.java,
+                EpubReaderActivity.intent(context, "books/test.epub", "test-3", "A Test Book"),
+            ).setup()
+        }.getOrElse {
+            org.junit.Assume.assumeTrue("Readium's web view could not be made here: $it", false)
+            return
+        }
+
+        // The book opens on a background thread, as in the other test.
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline &&
+            controller.get().supportFragmentManager.fragments.isEmpty()
+        ) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(50)
+        }
+        assertTrue("the book view was never added", controller.get().supportFragmentManager.fragments.isNotEmpty())
+
+        val webViews = ArrayList<android.webkit.WebView>()
+        fun walk(view: android.view.View) {
+            if (view is android.webkit.WebView) webViews.add(view)
+            if (view is android.view.ViewGroup) {
+                for (index in 0 until view.childCount) walk(view.getChildAt(index))
+            }
+        }
+        walk(controller.get().window.decorView)
+
+        controller.pause().stop().destroy()
+        org.junit.Assume.assumeTrue("no web view was found in the reader", webViews.isNotEmpty())
+        for (webView in webViews) {
+            assertTrue("a web view of the book is not offline", webView.settings.blockNetworkLoads)
+        }
+    }
+
+    @Test
+    fun `a page step keeps its sign in an ltr book and flips it in an rtl one`() {
+        assertEquals(1, pageStep(false, 1))
+        assertEquals(-1, pageStep(false, -1))
+        assertEquals(-1, pageStep(true, 1))
+        assertEquals(1, pageStep(true, -1))
     }
 }

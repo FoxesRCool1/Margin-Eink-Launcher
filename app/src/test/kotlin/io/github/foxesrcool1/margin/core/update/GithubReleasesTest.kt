@@ -192,6 +192,41 @@ class GithubReleasesTest {
     }
 
     @Test
+    fun `a download that throws part way leaves no part file`() {
+        val throwing = object : UpdateHttp {
+            override fun getText(url: String, headers: Map<String, String>): HttpText = error("not used")
+
+            override fun download(url: String, headers: Map<String, String>, target: File, onBytes: (Long) -> Unit): Int {
+                target.writeBytes(bytes.copyOf(100))
+                throw IOException("The connection dropped")
+            }
+        }
+        val folder = File(temporary.root, "updates")
+        val result = GithubReleases(throwing, repository = "o/r", userAgent = "Margin/test")
+            .download(assetFor(bytes), null, folder) {}
+        assertTrue(result.isFailure)
+        assertTrue(folder.list()!!.isEmpty())
+    }
+
+    @Test
+    fun `a file larger than the free space is refused before any request`() {
+        val folder = File(temporary.root, "updates")
+        val huge = ReleaseAsset("margin-v0.2.0-viwoods-debug.apk", Long.MAX_VALUE, "https://api.github.com/a/13", null)
+        val result = github.download(huge, null, folder) {}
+        assertEquals("Not enough space.", result.exceptionOrNull()?.message)
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun `a download address that is not on the API host is refused before any request`() {
+        val folder = File(temporary.root, "updates")
+        val elsewhere = ReleaseAsset("margin-v0.2.0-viwoods-debug.apk", bytes.size.toLong(), "https://evil.example/a/13", null)
+        val result = github.download(elsewhere, "t", folder) {}
+        assertEquals("The download address is not GitHub.", result.exceptionOrNull()?.message)
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
     fun `a name with a path in it cannot leave the folder`() {
         http.fileBytes = bytes
         val folder = File(temporary.root, "updates")

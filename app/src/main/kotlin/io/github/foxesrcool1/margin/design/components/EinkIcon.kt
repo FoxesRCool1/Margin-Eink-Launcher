@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -86,7 +87,7 @@ fun IconPressButton(
     enabled: Boolean = true,
     selected: Boolean = false,
     bordered: Boolean = false,
-    /** A control that should not draw the eye, like the one that turns the screen. */
+    /** Quiet means no border, drawn black at its size. */
     quiet: Boolean = false,
     iconSize: Dp = EinkDimens.icon,
 ) {
@@ -96,7 +97,7 @@ fun IconPressButton(
 
     val foreground = when {
         inverted -> EinkColors.Paper
-        !enabled || quiet -> EinkColors.Faded
+        !enabled -> EinkColors.Faded
         else -> EinkColors.Ink
     }
 
@@ -120,7 +121,8 @@ fun IconPressButton(
             .semantics {
                 contentDescription = label
                 role = Role.Button
-            },
+            }
+            .then(if (selected) Modifier.semantics { this.selected = true } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         EinkIcon(icon = icon, size = if (quiet) 20.dp else iconSize, color = foreground)

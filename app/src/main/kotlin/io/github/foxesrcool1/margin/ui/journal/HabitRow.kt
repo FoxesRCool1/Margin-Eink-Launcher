@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.habits.HabitSummary
@@ -51,6 +53,8 @@ fun HabitRow(
     EinkRow(onClick = if (enabled) onToggle else ({}), onLongClick = onOptions, modifier = modifier) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else if (enabled) EinkColors.Ink else EinkColors.Faded
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
+        // Small text is always black; grey is for large inactive text only.
+        val small = if (pressed) EinkColors.Paper else EinkColors.Ink
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -58,6 +62,9 @@ fun HabitRow(
         ) {
             EinkIcon(
                 icon = if (summary.doneToday) Lucide.CircleCheck else Lucide.Circle,
+                modifier = Modifier.semantics {
+                    stateDescription = if (summary.doneToday) "Done" else "Not done"
+                },
                 size = 22.dp,
                 color = foreground,
             )
@@ -70,7 +77,7 @@ fun HabitRow(
             )
             val streak = if (showStreak) JournalStrings.streakLabel(summary.currentStreak) else ""
             if (streak.isNotEmpty()) {
-                CapsLabel(text = streak, style = EinkType.capsSmall.copy(color = faded))
+                CapsLabel(text = streak, style = EinkType.capsSmall.copy(color = small))
             }
         }
 

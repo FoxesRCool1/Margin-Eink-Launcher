@@ -121,6 +121,43 @@ class SplitStateTest {
     }
 
     @Test
+    fun `a moved note is retargeted in the second half and on its trail`() {
+        val split = SplitState().apply { open() }
+        split.show(note)
+        split.show(writing)
+        assertFalse(split.noteMoved("notes/Letter.md", "archive/Letter.md"))
+        split.back()
+        assertEquals(PanePage.TypedNote("archive/Letter.md"), split.page)
+    }
+
+    @Test
+    fun `a note inside a renamed folder follows the folder`() {
+        val split = SplitState().apply { open() }
+        split.show(PanePage.InkNote("notes/Work/Sketch.inknote", "Sketch"))
+        split.noteMoved("notes", "Notes2")
+        assertEquals(PanePage.InkNote("Notes2/Work/Sketch.inknote", "Sketch"), split.page)
+    }
+
+    @Test
+    fun `a different note is not retargeted`() {
+        val split = SplitState().apply { open() }
+        split.show(note)
+        // A folder that only starts the same is not the folder.
+        split.noteMoved("notes/Let", "elsewhere")
+        assertEquals(note, split.page)
+        split.noteMoved("notes/Other.md", "x.md")
+        assertEquals(note, split.page)
+    }
+
+    @Test
+    fun `a move reports the main half when it shows the moved note`() {
+        val split = SplitState(mainPage = { note }).apply { open(writing) }
+        assertTrue(split.noteMoved("notes/Letter.md", "archive/Letter.md"))
+        assertFalse(split.noteMoved("notes/Other.md", "archive/Other.md"))
+        assertEquals(writing, split.page)
+    }
+
+    @Test
     fun `swap and carry keep the side`() {
         val split = SplitState().apply { open(journal) }
         split.swap()

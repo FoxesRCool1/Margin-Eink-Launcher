@@ -97,6 +97,14 @@ class NotesRepositoryTest {
     }
 
     @Test
+    fun `a rescue copy of an unreadable note is not listed`() {
+        store.writeText("notes/a.md", "# A")
+        store.writeText("notes/b.unreadable.json", "{")
+
+        assertEquals(listOf("a.md"), notes.list(notes.rootPath).map { it.name })
+    }
+
+    @Test
     fun `folders come before files`() {
         notes.createNote(notes.rootPath, "aaa")
         notes.createFolder(notes.rootPath, "zzz")

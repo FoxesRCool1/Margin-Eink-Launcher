@@ -107,10 +107,13 @@ object StrokesCodec {
                     val tool = InkTool.fromCode(toolCode)
                     val sane = width.isFinite() && width > 0f &&
                         xs.all { it.isFinite() } && ys.all { it.isFinite() }
-                    // A stroke from a tool this version does not know, or with
-                    // numbers that cannot be drawn, is left out. The rest of
+                    // A tool this version does not know means a newer app wrote
+                    // the file. Refuse it: skipping the stroke would delete it
+                    // on the next save.
+                    if (tool == null) throw StrokesFormatException("Unknown pen tool $toolCode")
+                    // Numbers that cannot be drawn are left out. The rest of
                     // the page is still worth having.
-                    if (tool != null && sane && pointCount > 0) {
+                    if (sane && pointCount > 0) {
                         strokes += InkStroke(tool, width, xs, ys, pressures)
                     }
                 }

@@ -90,12 +90,10 @@ class StrokesCodecTest {
     }
 
     @Test
-    fun `a stroke from an unknown tool is dropped and the rest is kept`() {
+    fun `a stroke from an unknown tool refuses the file so a save cannot delete it`() {
         val bytes = StrokesCodec.encode(listOf(InkTestData.dot(1f, 1f), InkTestData.dot(2f, 2f)))
         bytes[10] = 77 // the tool byte of the first stroke
-        val back = StrokesCodec.decode(bytes)
-        assertEquals(1, back.size)
-        assertEquals(2f, back[0].xs[0], 0f)
+        expectRefused(bytes)
     }
 
     @Test

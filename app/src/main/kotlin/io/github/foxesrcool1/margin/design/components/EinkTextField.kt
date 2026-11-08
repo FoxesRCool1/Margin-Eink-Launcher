@@ -2,6 +2,7 @@ package io.github.foxesrcool1.margin.design.components
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
@@ -10,6 +11,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -23,9 +25,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -74,6 +82,9 @@ fun EinkTextField(
      * "Go to page". Without this the cursor starts at the end.
      */
     selectAllOnOpen: Boolean = false,
+    /** Shown in capitals inside the field while it is empty. Also the field's content description. */
+    hint: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val state = rememberTextFieldState(
         initialText = value,
@@ -161,48 +172,75 @@ fun EinkTextField(
         }
     }
 
-    BasicTextField(
-        state = state,
-        enabled = enabled,
-        textStyle = textStyle,
-        lineLimits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.Default,
-        keyboardOptions = if (singleLine && onSubmit != null) {
-            KeyboardOptions(imeAction = ImeAction.Done)
-        } else {
-            KeyboardOptions.Default
-        },
-        onKeyboardAction = if (onSubmit != null) KeyboardActionHandler { latestOnSubmit?.invoke() } else null,
-        cursorBrush = SolidColor(Color.Transparent),
-        scrollState = scroll,
-        outputTransformation = if (singleLine) null else padding,
-        onTextLayout = { getResult -> layout = getResult },
-        modifier = modifier
-            .onFocusChanged { focused = it.isFocused }
-            .drawWithContent {
-                clipRect(bottom = wholeLines.coerceAtMost(size.height)) { this@drawWithContent.drawContent() }
-                val selection = state.selection
-                val result = layout?.invoke()
-                if (focused && enabled && selection.collapsed && result != null) {
-                    val offset = selection.start.coerceIn(0, result.layoutInput.text.length)
-                    val box = result.getCursorRect(offset)
-                    // The field scrolls its text when it is longer than the
-                    // box. The line has to move with the text.
-                    val dx = if (singleLine) scroll.value.toFloat() else 0f
-                    val dy = if (singleLine) 0f else scroll.value.toFloat()
-                    val x = box.left - dx
-                    val top = box.top - dy
-                    val bottom = box.bottom - dy
-                    if (bottom > 0f && top < size.height && x >= -1f && x <= size.width + 1f) {
-                        drawLine(
-                            color = EinkColors.Ink,
-                            start = Offset(x, top),
-                            end = Offset(x, bottom),
-                            strokeWidth = cursorWidth.toPx(),
-                        )
-                    }
+    // The platform toolbar and magnifier animate, which e-ink forbids. Ctrl+C,
+    // Ctrl+V, Ctrl+X and Ctrl+A still work from a hardware keyboard, because
+    // BasicTextField handles those keys itself.
+    CompositionLocalProvider(LocalTextToolbar provides NoTextToolbar) {
+        BasicTextField(
+            state = state,
+            enabled = enabled,
+            textStyle = textStyle,
+            lineLimits = if (singleLine) TextFieldLineLimits.SingleLine else TextFieldLineLimits.Default,
+            keyboardOptions = if (singleLine && onSubmit != null) {
+                keyboardOptions.copy(imeAction = ImeAction.Done)
+            } else {
+                keyboardOptions
+            },
+            onKeyboardAction = if (onSubmit != null) KeyboardActionHandler { latestOnSubmit?.invoke() } else null,
+            cursorBrush = SolidColor(Color.Transparent),
+            scrollState = scroll,
+            outputTransformation = if (singleLine) null else padding,
+            onTextLayout = { getResult -> layout = getResult },
+            decorator = { innerTextField ->
+                Box {
+                    if (hint != null && state.text.isEmpty()) CapsLabel(text = hint)
+                    innerTextField()
                 }
             },
-    )
+            modifier = modifier
+                .then(hint?.let { text -> Modifier.semantics { contentDescription = text } } ?: Modifier)
+                .onFocusChanged { focused = it.isFocused }
+                .drawWithContent {
+                    clipRect(bottom = wholeLines.coerceAtMost(size.height)) { this@drawWithContent.drawContent() }
+                    val selection = state.selection
+                    val result = layout?.invoke()
+                    if (focused && enabled && selection.collapsed && result != null) {
+                        val offset = selection.start.coerceIn(0, result.layoutInput.text.length)
+                        val box = result.getCursorRect(offset)
+                        // The field scrolls its text when it is longer than the
+                        // box. The line has to move with the text.
+                        val dx = if (singleLine) scroll.value.toFloat() else 0f
+                        val dy = if (singleLine) 0f else scroll.value.toFloat()
+                        val x = box.left - dx
+                        val top = box.top - dy
+                        val bottom = box.bottom - dy
+                        if (bottom > 0f && top < size.height && x >= -1f && x <= size.width + 1f) {
+                            drawLine(
+                                color = EinkColors.Ink,
+                                start = Offset(x, top),
+                                end = Offset(x, bottom),
+                                strokeWidth = cursorWidth.toPx(),
+                            )
+                        }
+                    }
+                },
+        )
+    }
+}
+
+/** A text toolbar that never shows. See the comment where it is provided. */
+private object NoTextToolbar : TextToolbar {
+    override val status: TextToolbarStatus = TextToolbarStatus.Hidden
+
+    override fun hide() {}
+
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?,
+    ) {}
 }
 
 /**

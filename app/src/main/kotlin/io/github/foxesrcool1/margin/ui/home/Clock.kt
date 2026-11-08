@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -15,6 +16,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleStartEffect
 import io.github.foxesrcool1.margin.core.log.AppLog
 import java.time.LocalDateTime
+
+/** The time, with the battery and Wi-Fi read at the same tick. */
+data class MinuteStatus(val time: LocalDateTime, val battery: Int?, val wifi: Boolean)
 
 /**
  * The time, updated once a minute.
@@ -30,13 +34,21 @@ import java.time.LocalDateTime
  */
 @Composable
 fun rememberMinuteClock(): State<LocalDateTime> {
+    val status = rememberMinuteStatus()
+    return remember(status) { derivedStateOf { status.value.time } }
+}
+
+/** The time, the battery and Wi-Fi, updated together once a minute. See [rememberMinuteClock]. */
+@Composable
+fun rememberMinuteStatus(): State<MinuteStatus> {
     val context = LocalContext.current
-    val time = remember { mutableStateOf(LocalDateTime.now()) }
+    // The last reading shows first, with the time now, so no wrong battery or Wi-Fi is drawn.
+    val status = remember { mutableStateOf((last ?: MinuteStatus(LocalDateTime.now(), null, false)).copy(time = LocalDateTime.now())) }
 
     LifecycleStartEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(received: Context?, intent: Intent?) {
-                time.value = LocalDateTime.now()
+                status.value = readMinuteStatus(context)
             }
         }
         val filter = IntentFilter().apply {
@@ -50,12 +62,17 @@ fun rememberMinuteClock(): State<LocalDateTime> {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        time.value = LocalDateTime.now()
+        status.value = readMinuteStatus(context)
         onStopOrDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    return time
+    return status
 }
+
+@Volatile private var last: MinuteStatus? = null
+
+private fun readMinuteStatus(context: Context): MinuteStatus =
+    MinuteStatus(LocalDateTime.now(), batteryPercent(context), onWifi(context)).also { last = it }
 
 /** Battery percent, or null when the tablet does not report one. */
 fun batteryPercent(context: Context): Int? = runCatching {

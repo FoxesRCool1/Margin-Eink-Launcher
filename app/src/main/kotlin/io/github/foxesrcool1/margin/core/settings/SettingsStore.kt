@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -168,6 +169,14 @@ class SettingsStore(context: Context) {
         store.edit { it[KEY_DICTIONARY_APP] = packageName }
     }
 
+    /** Every setting, encoded for a backup. Secrets and device paths are left out. */
+    suspend fun exportAll(): Map<String, String> = SettingsBackup.encode(store.data.first())
+
+    /** Writes the settings from a backup. Secrets and device paths are ignored. */
+    suspend fun importAll(saved: Map<String, String>) {
+        store.edit { SettingsBackup.apply(saved, it, KNOWN_KEYS) }
+    }
+
     companion object {
         private val KEY_READER_FONT = stringPreferencesKey("reader_font")
         private val KEY_READER_SIZE = androidx.datastore.preferences.core.intPreferencesKey("reader_font_size")
@@ -203,5 +212,32 @@ class SettingsStore(context: Context) {
         private val KEY_PINNED = stringPreferencesKey("pinned_apps")
         private val KEY_ART = booleanPreferencesKey("botanical_art")
         private val KEY_DICTIONARY_APP = stringPreferencesKey("dictionary_app")
+
+        /**
+         * Every setting the app declares, with its type tag. A backup may only
+         * write these, with the same type. Add a new key here too.
+         */
+        private val KNOWN_KEYS: Map<String, String> = mapOf(
+            "reader_font" to "str",
+            "reader_font_size" to "int",
+            "reader_margin" to "int",
+            "reader_line_height" to "int",
+            "reader_justify" to "bool",
+            "reader_underline_highlights" to "bool",
+            "reader_refresh_every" to "int",
+            "reader_goal_minutes" to "int",
+            "journal_goal_words" to "int",
+            "pen_width" to "float",
+            "fast_pen_mode" to "str",
+            "ink_redraw_delay" to "long",
+            "full_refresh_on_big_change" to "bool",
+            "home_labels" to "bool",
+            "landscape" to "bool",
+            "landscape_flipped" to "bool",
+            "status_bar_hidden" to "bool",
+            "pinned_apps" to "str",
+            "botanical_art" to "bool",
+            "dictionary_app" to "str",
+        )
     }
 }

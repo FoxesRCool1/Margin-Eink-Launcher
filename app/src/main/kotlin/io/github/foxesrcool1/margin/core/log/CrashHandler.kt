@@ -31,10 +31,8 @@ class CrashHandler private constructor(
 
             val dir = AppLog.logDirectory() ?: File(appContext.filesDir, "logs").apply { mkdirs() }
             val file = File(dir, "crash-${LogFormat.dayStamp(now)}-$now.txt")
+            // AppLog copies it to Downloads on the next start.
             file.writeText(text)
-
-            // A crash file is only useful if the owner can reach it.
-            AppLog.copyToDownloads(appContext, file)
         }
 
         previous?.uncaughtException(thread, error)

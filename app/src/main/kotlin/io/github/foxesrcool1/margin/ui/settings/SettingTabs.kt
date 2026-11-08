@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
+import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkShapes
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
@@ -57,13 +58,13 @@ fun SettingsTabs(
     vertical: Boolean = false,
 ) {
     if (vertical) {
-        Column(modifier = modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = modifier.width(88.dp), verticalArrangement = Arrangement.spacedBy(EinkDimens.targetGap)) {
             tabs.forEach { tab ->
                 TabButton(tab = tab, selected = tab == selected, onClick = { onSelect(tab) })
             }
         }
     } else {
-        Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap)) {
             tabs.forEach { tab ->
                 TabButton(tab = tab, selected = tab == selected, onClick = { onSelect(tab) }, modifier = Modifier.weight(1f))
             }

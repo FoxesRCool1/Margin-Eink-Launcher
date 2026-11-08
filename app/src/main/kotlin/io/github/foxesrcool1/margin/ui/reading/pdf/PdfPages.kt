@@ -35,34 +35,39 @@ class PdfPages private constructor(
 
     val pageCount: Int = renderer.pageCount
 
-    private val sizes = HashMap<Int, PageBox>()
-    private val contentBoxes = HashMap<Int, PageBox>()
+    private val sizes = HashMap<Int, PageBox?>()
+    private val contentBoxes = HashMap<Int, PageBox?>()
 
-    /** The whole page, in PDF points, origin top left. */
+    /** The whole page, in PDF points, origin top left. Null when the page is damaged. */
     @Synchronized
-    fun pageBox(index: Int): PageBox = sizes.getOrPut(index) {
-        renderer.openPage(index).use { page -> PageBox(0f, 0f, page.width.toFloat(), page.height.toFloat()) }
+    fun pageBox(index: Int): PageBox? = sizes.getOrPut(index) {
+        runCatching {
+            renderer.openPage(index).use { page -> PageBox(0f, 0f, page.width.toFloat(), page.height.toFloat()) }
+        }.onFailure { AppLog.e(TAG, "Could not open page ${index + 1}", it) }.getOrNull()
     }
 
-    /** The box around what is printed on the page, for "crop margins". Found once per page. */
+    /** The box around what is printed on the page, for "crop margins". Found once per page. Null when the page is damaged. */
     @Synchronized
-    fun contentBox(index: Int): PageBox = contentBoxes.getOrPut(index) {
+    fun contentBox(index: Int): PageBox? {
         val whole = pageBox(index)
-        runCatching {
-            val width = CROP_PROBE_WIDTH
-            val height = (width * whole.height / whole.width).roundToInt().coerceIn(1, width * 4)
-            val probe = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            probe.eraseColor(Color.WHITE)
-            renderer.openPage(index).use { page ->
-                page.render(probe, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        if (whole == null) return null
+        return contentBoxes.getOrPut(index) {
+            runCatching {
+                val width = CROP_PROBE_WIDTH
+                val height = (width * whole.height / whole.width).roundToInt().coerceIn(1, width * 4)
+                val probe = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                probe.eraseColor(Color.WHITE)
+                renderer.openPage(index).use { page ->
+                    page.render(probe, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                }
+                val pixels = IntArray(width * height)
+                probe.getPixels(pixels, 0, width, 0, 0, width, height)
+                probe.recycle()
+                CropDetector.contentBox(pixels, width, height, whole.width, whole.height)
+            }.getOrElse {
+                AppLog.w(TAG, "Could not find the margins of page ${index + 1}", it)
+                whole
             }
-            val pixels = IntArray(width * height)
-            probe.getPixels(pixels, 0, width, 0, 0, width, height)
-            probe.recycle()
-            CropDetector.contentBox(pixels, width, height, whole.width, whole.height)
-        }.getOrElse {
-            AppLog.w(TAG, "Could not find the margins of page ${index + 1}", it)
-            whole
         }
     }
 

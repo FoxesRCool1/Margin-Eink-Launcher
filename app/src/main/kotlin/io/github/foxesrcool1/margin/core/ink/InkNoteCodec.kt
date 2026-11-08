@@ -27,7 +27,8 @@ object InkNoteCodec {
     const val VERSION = 1
 
     private const val META = "meta.json"
-    private const val MAX_PAGES = 2_000
+    /** The most pages a note keeps. More would be lost on the next open. */
+    const val MAX_PAGES = 2_000
     private const val MAX_ENTRY_BYTES = 64L * 1024L * 1024L
 
     fun encode(note: InkNote): ByteArray {
@@ -81,8 +82,8 @@ object InkNoteCodec {
             ?.let { Json.parseOrNull(String(it, Charsets.UTF_8)) as? JsonObject }
             ?: throw StrokesFormatException("The ink note has no meta.json")
 
-        val version = meta.int("formatVersion")
-            ?: throw StrokesFormatException("meta.json has no formatVersion")
+        val version = meta.number("formatVersion")?.takeIf { it % 1.0 == 0.0 && it >= 1.0 }?.toInt()
+            ?: throw StrokesFormatException("meta.json has no usable formatVersion")
         if (version > VERSION) {
             throw StrokesFormatException("Ink note format $version is newer than this app knows ($VERSION)")
         }
@@ -101,6 +102,11 @@ object InkNoteCodec {
             val strokeBytes = entries["pages/$number.strokes"] ?: break
             pages += InkPageData(StrokesCodec.decode(strokeBytes), entries["pages/$number.png"])
             index++
+        }
+        // A page after a gap would be lost on the next save. Refuse the file instead.
+        val pageFiles = entries.keys.count { it.startsWith("pages/") && it.endsWith(".strokes") }
+        if (pageFiles != pages.size) {
+            throw StrokesFormatException("The ink note has $pageFiles page files but only ${pages.size} in a row from page 1")
         }
         if (pages.isEmpty()) pages += InkPageData(emptyList())
 

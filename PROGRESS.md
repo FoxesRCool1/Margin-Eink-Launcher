@@ -4,6 +4,111 @@ One section per step. Newest step at the top.
 
 ---
 
+## The review pass
+
+Date: 2026-11-08. Branch `Dev`. The owner asked for an in-depth review of
+the app, then for everything it found to be fixed and released. Decision
+0030. The review itself is `docs/REVIEW-2026-11-08.md`: seven reviewers,
+one area each, every finding checked against the code or a screenshot.
+
+### What was done
+
+Every confirmed bug, rule violation, UX problem, accessibility gap,
+security item and doc drift in the review, and the small promised features
+that were missing. In short:
+
+1. **Reader:** messages show while reading (a status strip); a damaged PDF
+   page or a failed render says so instead of a crash or a blank page; a
+   missing file has its own text; right to left books turn the right way;
+   the place is kept across a font change; progress never falls back to 0;
+   orphaned highlights are hidden from Search; the reading log is locked;
+   `lastOpened` is stored so Continue survives a restore; the HTTP client
+   is one singleton; service workers are blocked.
+2. **Files:** `fd.sync()` before the rename; a folder target is refused;
+   restore refuses an entry named like a top folder; 200 byte name limit
+   with the extension kept; BOM tolerated; backup reports skipped files;
+   temp and leftover files hidden and swept at start; files parsed with
+   losses are kept aside; habits and routine report failed saves; app
+   folders refuse to overwrite a file they could not read; settings in the
+   backup zip.
+3. **Pen:** a half failed fast pen start is undone; the eraser tool is
+   re-sent after a session restart; a failed save is retried and shown;
+   an empty or gapped note file is damaged, not blank; unknown tools refuse
+   the file; pen pointer tracked by id with `ACTION_POINTER_UP`; cancelled
+   strokes repainted; the dirty rectangle only; vendor failures logged;
+   shell fallback retries after 60 s; two refreshes in a row keep the
+   user's mode; `PaneInk` does not restart while paused; the guard needs
+   two deaths; export reports the real result; template change asks first.
+4. **Shell:** Journal tab clashes with a journal day; rename and move
+   follow into the other half; `REQUEST_DELETE_PACKAGES`; stale "opened on
+   its own screen" cleared; Apps shows nothing until loaded, with a budget;
+   pins dropped only for uninstalled apps; failed launch says so; cold
+   start measured only when Home is first; Collator sort; `ScreenWindow`
+   failure not cached and saves in order; quick notes on `lifecycleScope`;
+   battery and Wi-Fi read in the tick, not in composition; routine Start
+   goes through the page opener; pen strokes are not Home swipes; status
+   line on its own row in a narrow half.
+5. **Design and UX:** `EinkRow`, switches, selected buttons, text fields
+   and titles publish semantics; a hint on text fields; no platform text
+   toolbar; dialogs capped to the window; black empty states; 12 dp gaps;
+   titles wrap before they shrink; a middle dot separator; small grey text
+   is black; ring and check in option dialogs; month view in pages of three
+   weeks at 56 dp; Remove, Archive and Cancel ask first; archived habits
+   list; routine "Start Opens"; Daily Word Goal and Day Boundary rows;
+   Device Test debug only; Update screen with a safe primary button, paged
+   notes, plain failure text, password keyboard for the token.
+6. **Update, log, repo:** no double install, no check while Ready, auto
+   install only when allowed; `.part` cleaned on any failure; free space
+   check; API host check before the token; version code must match the tag;
+   logcat mirror debug only; crash files pruned to five; release workflow
+   fails without the key on the main repository; CI read-only token;
+   actions pinned by SHA; Ko-fi back to three places; `.gitignore` for keys;
+   release.sh dry-runs the push first; README, CLAUDE.md, plan.md, HANDOFF
+   and decisions brought in line; repo-local git identity is the noreply
+   address.
+
+### What works
+
+- The debug build, all unit and screenshot tests, lint. About 100 new
+  tests across every area, and new screenshots: the reader status strip,
+  Update on its side and in a half, Log in a split, large font Settings,
+  Journal day and Reading list, the Daily Word Goal dialog, the archive
+  confirm, the archived habits list, the month view in pages.
+
+### What does not work yet, or is not known
+
+- Nothing here has run on the tablet.
+- Not built, on purpose (review section 5): search inside a book,
+  bookmarks and go to percent, share for exports, open-with for books, a
+  page overview for handwritten notes, reading statistics, a journal
+  browse list, PDF outline and text selection, a pinned app as a routine
+  target, a masked token field.
+- The month view in a 320 dp half keeps 56 dp of height but seven columns
+  cannot each be 56 dp wide.
+- The WebView network block test skips under Robolectric if Readium's
+  WebView cannot be built there.
+
+### Test on the tablet
+
+1. Apps, A to Z, hold an app, Uninstall. The system uninstall dialog must
+   appear.
+2. Open a note, hold a word. No floating toolbar or magnifier should fade
+   in. Ctrl+C and Ctrl+V on a keyboard still work.
+3. Draw with the pen on Home, downward. Search must not open.
+4. Eraser mode, erase, open and close More, erase again. The panel must not
+   draw a black line.
+5. Pen down with the palm resting, lift the pen first. The stroke is kept.
+6. Auto Refresh on, change tab twice within a second. Settings, Screen must
+   still show your refresh mode.
+7. Open an EPUB with no dictionary app, select a word, Look Up. The strip
+   at the bottom says "No dictionary app found".
+8. Journal, month view on its side and in a split half. Each day is finger
+   sized; a six week month turns in two pages.
+9. Settings, Files, Back Up, then Restore on another install. Pinned apps,
+   pen mode and reader settings come back.
+10. Journal, routine item options, Start Opens: Read. Home shows Start for
+    it and opens the library.
+
 ## Search, Look Up, the document before, and a simpler UI
 
 Date: 2026-11-05. Branch `Dev`. The owner asked for the features from a web

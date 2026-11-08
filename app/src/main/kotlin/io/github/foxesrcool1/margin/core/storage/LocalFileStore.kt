@@ -1,6 +1,8 @@
 package io.github.foxesrcool1.margin.core.storage
 
+import io.github.foxesrcool1.margin.core.log.AppLog
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -61,10 +63,18 @@ class LocalFileStore(private val root: File) : FileStore {
     override fun lastModified(relativePath: String): Long =
         runCatching { resolve(relativePath).lastModified() }.getOrDefault(0L)
 
+    /** Names left behind by an interrupted or Windows write, which are not user content. */
+    private val leftoverPattern = Regex("""\.(part|old)-\d+$""")
+    private val partPattern = Regex("""\.part-\d+$""")
+
+    private fun isLeftover(name: String): Boolean =
+        leftoverPattern.containsMatchIn(name) || name.endsWith(".renaming")
+
     override fun list(relativePath: String): List<StoredEntry> {
         val directory = runCatching { resolve(relativePath) }.getOrNull() ?: return emptyList()
         val children = directory.listFiles() ?: return emptyList()
         return children
+            .filterNot { isLeftover(it.name) }
             .map(::entryOf)
             .sortedWith(compareByDescending<StoredEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
     }
@@ -89,10 +99,40 @@ class LocalFileStore(private val root: File) : FileStore {
 
             val children = current.listFiles() ?: continue
             children.forEach { child ->
-                if (child.isDirectory) pending.addLast(child) else found += entryOf(child)
+                if (child.isDirectory) {
+                    pending.addLast(child)
+                } else if (!isLeftover(child.name)) {
+                    found += entryOf(child)
+                }
             }
         }
         return found.sortedBy { it.relativePath.lowercase() }
+    }
+
+    override fun sweepLeftovers(olderThanMillis: Long): Int {
+        val cutoff = System.currentTimeMillis() - olderThanMillis
+        var deleted = 0
+
+        // The same walk as listFilesRecursively, without the leftover filter.
+        val pending = ArrayDeque<File>()
+        val visited = mutableSetOf<String>()
+        pending.addLast(root)
+
+        while (pending.isNotEmpty()) {
+            val current = pending.removeFirst()
+            val key = runCatching { current.canonicalPath }.getOrDefault(current.path)
+            if (!visited.add(key)) continue
+
+            val children = current.listFiles() ?: continue
+            for (child in children) {
+                if (child.isDirectory) {
+                    pending.addLast(child)
+                } else if (partPattern.containsMatchIn(child.name) && child.lastModified() < cutoff && child.delete()) {
+                    deleted++
+                }
+            }
+        }
+        return deleted
     }
 
     override fun createDirectories(relativePath: String): Boolean = runCatching {
@@ -130,14 +170,21 @@ class LocalFileStore(private val root: File) : FileStore {
             if (RelativePaths.normalise(relativePath).isEmpty()) return@runCatching false
 
             val target = resolve(relativePath)
+            if (target.isDirectory) {
+                AppLog.w("LocalFileStore", "Refused to write over the folder $relativePath")
+                return@runCatching false
+            }
             val parent = target.parentFile ?: return@runCatching false
             parent.mkdirs()
 
             val temporary = File(parent, "${target.name}.part-${System.nanoTime()}")
             try {
-                temporary.outputStream().use { output ->
+                FileOutputStream(temporary).use { output ->
                     body(output)
                     output.flush()
+                    // Push the bytes to the disk before the rename, so a power loss
+                    // cannot leave the new name pointing at an empty file.
+                    output.fd.sync()
                 }
 
                 // On every file system this app will meet except Windows, a

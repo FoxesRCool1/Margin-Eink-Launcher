@@ -5,6 +5,10 @@ import android.content.Context
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import io.github.foxesrcool1.margin.BuildConfig
+import io.github.foxesrcool1.margin.core.threads.AppDispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
@@ -37,13 +41,18 @@ object AppLog {
 
     /** Also send every line to logcat. Off on the tablet, on for the tests. */
     @Volatile
-    var mirrorToLogcat: Boolean = true
+    var mirrorToLogcat: Boolean = BuildConfig.DEBUG
 
     fun init(context: Context) {
         val dir = File(context.filesDir, "logs")
         dir.mkdirs()
         logDir = dir
         writer.execute { deleteOldFiles(dir, System.currentTimeMillis()) }
+        val appContext = context.applicationContext
+        CoroutineScope(AppDispatchers.io).launch {
+            runCatching { copyPendingCrashes(appContext, dir) }
+            runCatching { pruneCrashFiles(dir) }
+        }
         i("AppLog", "Log started. Directory: ${dir.absolutePath}")
     }
 
@@ -98,13 +107,14 @@ object AppLog {
     /** The newest lines, oldest first. The log viewer shows these. */
     fun recentLines(): List<LogLine> = synchronized(memory) { memory.toList() }
 
-    /** Every log file, newest first. */
+    /** Every day log, newest first, then every crash file, newest first. */
     fun logFiles(): List<File> {
         val dir = logDir ?: return emptyList()
-        return dir.listFiles()
-            ?.filter { it.isFile && it.name.startsWith("log-") }
-            ?.sortedByDescending { it.name }
-            ?: emptyList()
+        val files = dir.listFiles()?.filter { it.isFile } ?: return emptyList()
+        val days = files.filter { it.name.startsWith("log-") }.sortedByDescending { it.name }
+        val crashes = files.filter { it.name.startsWith("crash-") && it.name.endsWith(".txt") }
+            .sortedByDescending { it.name }
+        return days + crashes
     }
 
     fun logDirectory(): File? = logDir
@@ -118,11 +128,35 @@ object AppLog {
     }
 
     internal fun deleteOldFiles(dir: File, nowMillis: Long) {
-        dir.listFiles()?.forEach { file ->
+        val files = dir.listFiles() ?: return
+        files.forEach { file ->
             if (LogFormat.isExpiredLogFile(file.name, nowMillis, KEEP_DAYS)) {
                 file.delete()
             }
         }
+    }
+
+    /** Deletes the old crash files, and their `.copied` markers, beyond the newest few. */
+    internal fun pruneCrashFiles(dir: File) {
+        val names = dir.listFiles()?.map { it.name } ?: return
+        LogFormat.crashFilesToDelete(names).forEach { name ->
+            File(dir, name).delete()
+            File(dir, "$name.copied").delete()
+        }
+    }
+
+    /**
+     * Copies each crash file that has no Downloads copy yet. A `<crash>.copied`
+     * marker next to the file means the copy is done.
+     */
+    private fun copyPendingCrashes(context: Context, dir: File) {
+        dir.listFiles()
+            ?.filter { it.isFile && it.name.startsWith("crash-") && it.name.endsWith(".txt") }
+            ?.forEach { file ->
+                val marker = File(dir, "${file.name}.copied")
+                if (marker.exists()) return@forEach
+                if (copyToDownloads(context, file) != null) marker.writeText("")
+            }
     }
 
     /**

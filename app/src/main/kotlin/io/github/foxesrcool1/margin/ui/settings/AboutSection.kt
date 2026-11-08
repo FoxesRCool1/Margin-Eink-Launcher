@@ -34,6 +34,10 @@ object Credits {
         Credit("jsoup", "MIT License. Jonathan Hedley."),
         Credit("Fonts", "Bodoni Moda, Jost and Literata. SIL Open Font License 1.1."),
         Credit("Lucide", "ISC License, Lucide Icons and Contributors. Some icons from Feather: MIT License, Cole Bemis."),
+        Credit("desugar_jdk_libs", "GPL-2.0 with Classpath Exception. Part of OpenJDK."),
+        Credit("kotlinx.serialization, kotlinx-datetime", "Apache License 2.0. JetBrains."),
+        Credit("media3", "Apache License 2.0. Google."),
+        Credit("Licences", "Licence texts: see licenses/ in the source repository."),
     )
 }
 

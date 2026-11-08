@@ -50,7 +50,7 @@ promise honest:
 | `UrlConnectionHttp` | The network, on `HttpURLConnection`. No new library. |
 | `ApkCheck` | Looks at the file before Android does, to give a reason in words. |
 | `ApkInstaller`, `InstallStatusReceiver` | The install, and what Android said about it. |
-| `UpdateManager` | Holds the state outside any screen, so the Home key does not stop a 60 MB download. |
+| `UpdateManager` | Holds the state outside any screen, so the Home key does not stop a download of the APK, which is about 40 MB. |
 | `UpdateScreen` | Shows the state. Nothing else. |
 
 ## Choices inside it

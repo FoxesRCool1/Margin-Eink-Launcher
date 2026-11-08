@@ -3,14 +3,16 @@ package io.github.foxesrcool1.margin.ui.journal
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import io.github.foxesrcool1.margin.ui.split.rememberPageOpener
+import io.github.foxesrcool1.margin.design.components.EinkIcon
+import io.github.foxesrcool1.margin.design.components.EinkRow
 import io.github.foxesrcool1.margin.design.components.EinkTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,7 +33,9 @@ import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.ui.ink.InkNoteActivity
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
+import io.github.foxesrcool1.margin.core.habits.Habit
 import io.github.foxesrcool1.margin.core.habits.HabitSummary
+import io.github.foxesrcool1.margin.core.habits.HabitsDocument
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.journal.JournalGoal
 import io.github.foxesrcool1.margin.core.journal.saveJournalEntry
@@ -47,11 +51,11 @@ import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
+import io.github.foxesrcool1.margin.design.components.ConfirmDialog
 import io.github.foxesrcool1.margin.design.components.DialogOption
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.IconPressButton
-import io.github.foxesrcool1.margin.design.components.InvertPressButton
 import io.github.foxesrcool1.margin.design.components.Plants
 import io.github.foxesrcool1.margin.design.components.einkFieldBorder
 import io.github.foxesrcool1.margin.design.icons.Lucide
@@ -73,7 +77,13 @@ private const val HABITS_PER_PAGE = 3
 /** The word count waits for the typing to pause, like the one in the note editor. */
 private const val COUNT_QUIET_MILLIS = 400L
 
-private enum class JournalMode { Day, Month, Routine }
+/** True when the typed text differs from the saved text. Trailing spaces and line ends do not count. */
+internal fun hasUnsavedText(saved: String, typed: String): Boolean = saved.trimEnd() != typed.trimEnd()
+
+private enum class JournalMode { Day, Month, Routine, Archived }
+
+/** The habits the user has archived. */
+internal fun archivedOf(doc: HabitsDocument): List<Habit> = doc.habits.filter { it.archived }
 
 /**
  * The Journal tab: one entry per day, a month view, and the habits.
@@ -155,6 +165,11 @@ fun JournalScreen(
     var routineRows by remember { mutableStateOf<List<RoutineStatus>>(emptyList()) }
     var daysWithEntries by remember { mutableStateOf<Set<LocalDate>>(emptySet()) }
     var hasInkEntry by remember { mutableStateOf(false) }
+    var archivedHabits by remember { mutableStateOf<List<Habit>>(emptyList()) }
+
+    LaunchedEffect(refresh) {
+        archivedHabits = withContext(AppDispatchers.io) { archivedOf(habits.load()) }
+    }
 
     // Coming back from the ink screen has to show that the day now has a
     // handwritten page, in the day view and in the month view.
@@ -168,6 +183,12 @@ fun JournalScreen(
     var addingRoutineItem by remember { mutableStateOf(false) }
     var routineOptionsFor by remember { mutableStateOf<RoutineStatus?>(null) }
     var renaming by remember { mutableStateOf<HabitSummary?>(null) }
+    var archiving by remember { mutableStateOf<HabitSummary?>(null) }
+    var restoring by remember { mutableStateOf<Habit?>(null) }
+    var removingRoutine by remember { mutableStateOf<RoutineStatus?>(null) }
+    var startingFor by remember { mutableStateOf<RoutineStatus?>(null) }
+    var newRoutineLabel by remember { mutableStateOf<String?>(null) }
+    var confirmDiscard by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewDate, refresh) {
         val date = viewDate
@@ -297,6 +318,16 @@ fun JournalScreen(
         saveOnTheWayOut("the screen paused")
     }
 
+    // Ends an edit without keeping its words: the text goes back to the one the
+    // edit began with. A pause may have saved the edit already, and then the
+    // text from before the edit has to be written back.
+    fun discardEdit() {
+        val original = editStartText
+        entryText = original
+        saveProblem = false
+        if (savedText != original) saveEntry { editing = false } else editing = false
+    }
+
     fun openHandwriting() {
         runCatching {
             opener.openInkNote(
@@ -321,8 +352,13 @@ fun JournalScreen(
             JournalMode.Day -> JournalStrings.dayTitle(viewDate)
             JournalMode.Month -> JournalStrings.monthTitle(viewDate)
             JournalMode.Routine -> "Routine"
+            JournalMode.Archived -> "Archived Habits"
         },
-        shortTitle = if (mode == JournalMode.Day) JournalStrings.shortDayTitle(viewDate) else null,
+        shortTitle = when (mode) {
+            JournalMode.Day -> JournalStrings.shortDayTitle(viewDate)
+            JournalMode.Month -> JournalStrings.shortMonthTitle(viewDate)
+            else -> null
+        },
         overline = when {
             mode != JournalMode.Routine -> JournalStrings.dayOverline(viewDate, today)
             viewDate == today -> "Journal"
@@ -332,9 +368,9 @@ fun JournalScreen(
         modifier = modifier,
         // The routine is a page inside the Journal, so its way back leads to
         // the day, and only the day leads Home.
-        onBack = if (mode == JournalMode.Routine) ({ mode = JournalMode.Day }) else onBack,
-        backIcon = if (mode == JournalMode.Routine) Lucide.ArrowLeft else Lucide.House,
-        backLabel = if (mode == JournalMode.Routine) "Back to the day" else "Home",
+        onBack = if (mode == JournalMode.Routine || mode == JournalMode.Archived) ({ mode = JournalMode.Day }) else onBack,
+        backIcon = if (mode == JournalMode.Routine || mode == JournalMode.Archived) Lucide.ArrowLeft else Lucide.House,
+        backLabel = if (mode == JournalMode.Routine || mode == JournalMode.Archived) "Back to the day" else "Home",
         actions = {
             if (mode == JournalMode.Routine) {
                 IconPressButton(
@@ -343,7 +379,7 @@ fun JournalScreen(
                     bordered = true,
                     onClick = { addingRoutineItem = true },
                 )
-            } else {
+            } else if (mode != JournalMode.Archived) {
                 IconPressButton(
                     icon = Lucide.ChevronLeft,
                     label = if (mode == JournalMode.Day) "The day before" else "The month before",
@@ -401,6 +437,22 @@ fun JournalScreen(
                 )
             }
 
+            JournalMode.Archived -> PagedList(
+                items = archivedHabits,
+                pageSize = 4,
+                rowHeight = EinkDimens.touchTarget,
+                emptyText = "No archived habits.",
+                modifier = Modifier.weight(1f),
+            ) { _, habit ->
+                EinkRow(onClick = { restoring = habit }) { pressed ->
+                    EinkText(
+                        text = habit.name,
+                        style = EinkType.rowTitle.copy(color = if (pressed) EinkColors.Paper else EinkColors.Ink),
+                        maxLines = 1,
+                    )
+                }
+            }
+
             JournalMode.Month -> MonthView(
                 month = viewDate,
                 daysWithEntries = daysWithEntries,
@@ -432,15 +484,11 @@ fun JournalScreen(
                         },
                         onSave = { saveEntry { editing = false } },
                         onCancel = {
-                            val original = editStartText
-                            entryText = original
-                            saveProblem = false
-                            // A pause may have saved the edit already. Then the
-                            // text from before the edit has to be written back.
-                            if (savedText != original) saveEntry { editing = false } else editing = false
-                        },
-                        onGoal = {
-                            scope.launch { settings.setJournalGoal(JournalGoal.next(goal)) }
+                            if (hasUnsavedText(saved = editStartText, typed = entryText)) {
+                                confirmDiscard = true
+                            } else {
+                                discardEdit()
+                            }
                         },
                         onHandwrite = { openHandwriting() },
                         modifier = entryModifier,
@@ -481,6 +529,15 @@ fun JournalScreen(
                                 onOptions = { optionsFor = summary },
                             )
                         }
+                        if (archivedHabits.isNotEmpty()) {
+                            EinkRow(onClick = { commitEdit { mode = JournalMode.Archived } }) { pressed ->
+                                EinkText(
+                                    text = "Archived Habits",
+                                    style = EinkType.rowTitle.copy(color = if (pressed) EinkColors.Paper else EinkColors.Ink),
+                                    maxLines = 1,
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -519,15 +576,50 @@ fun JournalScreen(
                     optionsFor = null
                 },
                 DialogOption(label = "Archive", icon = Lucide.Archive) {
-                    scope.launch {
-                        withContext(AppDispatchers.io) {
-                            habits.setArchived(selected.habit.id, true)
-                        }
-                        refresh++
-                    }
+                    archiving = selected
                     optionsFor = null
                 },
             ),
+        )
+    }
+
+    val archivingNow = archiving
+    if (archivingNow != null) {
+        ConfirmDialog(
+            title = "Archive this habit?",
+            message = "${archivingNow.habit.name} will leave the habit list.",
+            confirmText = "Archive",
+            cancelText = "Cancel",
+            onConfirm = {
+                archiving = null
+                scope.launch {
+                    withContext(AppDispatchers.io) {
+                        habits.setArchived(archivingNow.habit.id, true)
+                    }
+                    refresh++
+                }
+            },
+            onDismiss = { archiving = null },
+        )
+    }
+
+    val restoringNow = restoring
+    if (restoringNow != null) {
+        ConfirmDialog(
+            title = "Restore this habit?",
+            message = "${restoringNow.name} will return to the habit list.",
+            confirmText = "Restore",
+            cancelText = "Cancel",
+            onConfirm = {
+                restoring = null
+                scope.launch {
+                    withContext(AppDispatchers.io) {
+                        habits.setArchived(restoringNow.id, false)
+                    }
+                    refresh++
+                }
+            },
+            onDismiss = { restoring = null },
         )
     }
 
@@ -547,13 +639,60 @@ fun JournalScreen(
                     }
                     routineOptionsFor = null
                 }
+            } + DialogOption(label = "Start Opens") {
+                startingFor = routineOptionsFor
+                routineOptionsFor = null
             } + DialogOption(label = "Remove", icon = Lucide.Trash2) {
-                scope.launch {
-                    withContext(AppDispatchers.io) { routine.remove(routineItem.id) }
-                    refresh++
-                }
+                removingRoutine = routineOptionsFor
                 routineOptionsFor = null
             },
+        )
+    }
+
+    val startingNow = startingFor
+    if (startingNow != null) {
+        StartOpensDialog(
+            current = startingNow.item.target,
+            onChoose = { target ->
+                startingFor = null
+                scope.launch {
+                    withContext(AppDispatchers.io) { routine.setTarget(startingNow.item.id, target) }
+                    refresh++
+                }
+            },
+            onDismiss = { startingFor = null },
+        )
+    }
+
+    val removingNow = removingRoutine
+    if (removingNow != null) {
+        ConfirmDialog(
+            title = "Remove this item?",
+            message = "${removingNow.item.label} will be taken off the routine.",
+            confirmText = "Remove",
+            cancelText = "Cancel",
+            onConfirm = {
+                removingRoutine = null
+                scope.launch {
+                    withContext(AppDispatchers.io) { routine.remove(removingNow.item.id) }
+                    refresh++
+                }
+            },
+            onDismiss = { removingRoutine = null },
+        )
+    }
+
+    if (confirmDiscard) {
+        ConfirmDialog(
+            title = "Throw away what you typed?",
+            message = "The words typed since the edit began will be lost.",
+            confirmText = "Throw Away",
+            cancelText = "Keep Writing",
+            onConfirm = {
+                confirmDiscard = false
+                discardEdit()
+            },
+            onDismiss = { confirmDiscard = false },
         )
     }
 
@@ -563,12 +702,24 @@ fun JournalScreen(
             confirmText = "Add",
             onConfirm = { label ->
                 addingRoutineItem = false
+                newRoutineLabel = label
+            },
+            onDismiss = { addingRoutineItem = false },
+        )
+    }
+
+    val addingLabel = newRoutineLabel
+    if (addingLabel != null) {
+        StartOpensDialog(
+            current = "",
+            onChoose = { target ->
+                newRoutineLabel = null
                 scope.launch {
-                    withContext(AppDispatchers.io) { routine.add(label) }
+                    withContext(AppDispatchers.io) { routine.add(addingLabel, target) }
                     refresh++
                 }
             },
-            onDismiss = { addingRoutineItem = false },
+            onDismiss = { newRoutineLabel = null },
         )
     }
 
@@ -606,6 +757,34 @@ fun JournalScreen(
     }
 }
 
+/** The targets a routine item can open, with the name each one shows. */
+private val StartTargets = listOf(
+    "Nothing" to "",
+    "Read" to "read",
+    "Write" to "write",
+    "Journal" to "journal",
+    "Apps" to "apps",
+)
+
+/** Picks what the Start button opens. The target in [current] is marked. */
+@Composable
+private fun StartOpensDialog(
+    current: String,
+    onChoose: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    OptionsDialog(
+        title = "Start Opens",
+        onDismiss = onDismiss,
+        options = StartTargets.map { (label, target) ->
+            DialogOption(
+                label = label,
+                icon = if (target == current) Lucide.Check else null,
+            ) { onChoose(target) }
+        },
+    )
+}
+
 /** Everything one load of the screen needs, read in one trip to the disk. */
 private data class LoadedDay(
     val entry: String,
@@ -632,9 +811,8 @@ private val RoutineRowHeight = 96.dp
  * to type, one to write by hand. While it is being typed it is a text box with
  * a tick to save and a cross to give up.
  *
- * The label row also holds the word count, "212 / 750" against the daily goal.
- * Pressing it moves to the next goal. A day that has reached the goal gets a
- * check in front of the count, and nothing else.
+ * The label row also holds the word count, "212 / 750" against the daily goal,
+ * as plain text. A day that has reached the goal gets a check in front of it.
  */
 @Composable
 private fun DayEntry(
@@ -649,7 +827,6 @@ private fun DayEntry(
     onEdit: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    onGoal: () -> Unit,
     onHandwrite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -662,8 +839,7 @@ private fun DayEntry(
     Column(modifier = modifier) {
         // The count sits in the label row. There is no room for a row of its
         // own under the entry: upright it pushed a habit off the page, and in
-        // half of a split screen the page was already full. The row is 56 dp
-        // tall, so the count is a target big enough to press. In a narrow
+        // half of a split screen the page was already full. In a narrow
         // column the word "Entry" gives way to the count, and in the narrowest
         // the count gets small. The icons on the right always keep their room.
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -672,19 +848,24 @@ private fun DayEntry(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     if (roomy) CapsLabel(text = "Entry", style = EinkType.capsSmall)
-                    InvertPressButton(
-                        text = JournalGoal.shortCountText(words, goal),
-                        onClick = onGoal,
-                        bordered = false,
-                        compact = true,
-                        icon = if (JournalGoal.reached(words, goal)) Lucide.Check else null,
-                        iconSize = if (tight) 16.dp else 20.dp,
-                        iconGap = if (tight) 4.dp else 10.dp,
-                        contentPadding = PaddingValues(horizontal = if (tight) 4.dp else 8.dp, vertical = 8.dp),
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = if (tight) 4.dp else 8.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (tight) 4.dp else 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (JournalGoal.reached(words, goal)) {
+                            EinkIcon(icon = Lucide.Check, size = if (tight) 16.dp else 20.dp)
+                        }
+                        EinkText(
+                            text = JournalGoal.shortCountText(words, goal),
+                            style = EinkType.buttonCompact.copy(color = EinkColors.Ink),
+                            maxLines = 1,
+                        )
+                    }
                 }
                 if (editing) {
                     IconPressButton(icon = Lucide.X, label = "Cancel", onClick = onCancel)
+                    Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                     IconPressButton(icon = Lucide.Check, label = "Save", bordered = true, onClick = onSave)
                 } else {
                     IconPressButton(

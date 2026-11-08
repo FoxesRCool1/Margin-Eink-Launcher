@@ -52,7 +52,7 @@ eyes there are.
 | 7. Reading, EPUB | Done, on Readium 3.4.0. **Judge it on the panel**, plan section 8. |
 | 8. Reading, PDF | Code done, on the platform `PdfRenderer`. No PDF was rendered off the tablet. |
 | 9. Journal | Done. |
-| 10. Audit and release | Audit done from code and screenshots. Release workflow ready. **No release was made.** |
+| 10. Audit and release | Audit done from code and screenshots. Release workflow ready. **Releases were made, starting with 1.0.0. See 2g.** |
 
 The repository has two branches, `main` and `Dev`. Work happens on `Dev`.
 `main` gets what is ready. Do not make a new branch. The old step branches
@@ -177,7 +177,7 @@ decision 0020. What a new session must know:
 - **The web research** (GitHub issues of Olauncher, KISS, inkOS, mLauncher,
   E-Ink-Launcher, MobileRead threads, F-Droid) is summed up in the PROGRESS
   section. What is left on that list either needs root, is vendor locked, or
-  is against the design. Gestures on Home were the one open idea.
+  is against the design. The Home swipes shipped in 1.3.0.
 - **The name is Margin**, decision 0021. Package `io.github.foxesrcool1.margin`,
   data folder `Margin/`, release files `margin-<tag>-<flavour>.apk`,
   repository `FoxesRCool1/Margin-Eink-Launcher`. "Eink Launcher" in an old
@@ -305,6 +305,36 @@ know:
   half passes none.
 - **Released as 1.3.0.**
 
+### 2l. The review pass of 2026-11-08
+
+Seven reviewers read the whole app; `docs/REVIEW-2026-11-08.md` is the
+merged list and decision 0030 the choices. `PROGRESS.md`, top section. What a
+new session must know:
+
+- **The reader has a status strip.** `ReaderUiState.warning` stays all
+  session, `notice` clears on the next page turn or tap. Set a message there;
+  do not expect the Notes panel to show it.
+- **The backup zip has `settings.json`.** `SettingsBackup` encodes the
+  DataStore. A new settings key must be added to `SettingsStore.KNOWN_KEYS`
+  or restore ignores it.
+- **Names are limited to 200 bytes of UTF-8** in `StorageLayout`. The stem
+  is cut, the extension kept.
+- **`LocalFileStore.write` syncs before the rename** and refuses a target
+  that is a folder. `list*` hides `.part-`, `.old-` and `.renaming` files.
+  `DataRepository.sweepLeftovers()` runs at start.
+- **`FastPenGuard` needs two unfinished tries** to ban a path.
+- **`SplitState.noteMoved(from, to)`** follows a rename or move. Call it
+  from any new place that renames a note.
+- **`EinkRow` publishes semantics**, `IconPressButton` publishes
+  `selected` only when asked, `EinkTextField` has `hint`. The platform text
+  toolbar is turned off through `LocalTextToolbar`.
+- **`EinkSeparator`** (a middle dot) replaces the old `"  .  "` literal.
+- **The repo-local git identity is the GitHub noreply address.** Keep it.
+- **Not built, on purpose:** search inside a book, bookmarks, share for
+  exports, open-with for books, the ink page overview, reading statistics.
+  Review section 5 has the list.
+- **Released as 1.4.0.**
+
 ---
 
 ## 3. What to do next, in order
@@ -333,7 +363,7 @@ Still open from step 4. Settings, About, "Design Demo", Dev, "Time 500 files".
 
 ### 3.4 Then the known gaps
 
-1. A paged typed editor. A long note scrolls inside its field today, which
+1. Done, see 2i. A paged typed editor. A long note scrolls inside its field today, which
    breaks e-ink rule 2. See decision 0011.
 2. Screenshot comparison in CI. Blocked by one screenshot that shows a
    temporary path. See decision 0011.

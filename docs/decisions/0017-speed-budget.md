@@ -22,6 +22,8 @@ written when a moment is on time, so the log does not fill up.
 | Open a note, typed or handwritten | 400 ms | the read from the disk |
 | Open a book, EPUB or PDF | 1500 ms | the start of the open, to the first page ready |
 | Read the window settings | 60 ms | the one blocking read before the first frame |
+| `SEARCH`: a search shows its results | 800 ms | the search started, to the results on screen |
+| `APPS_LOAD`: the Apps tab shows its list | 400 ms | the Apps tab opened, to its list on screen |
 
 The numbers are first guesses for an e-ink tablet. The first tablet log that
 has timings in it should set them: a budget that is broken every time is

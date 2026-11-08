@@ -47,9 +47,13 @@ object AdjacentApps {
      */
     private const val REQUEST_LIFETIME_MILLIS = 15_000L
 
+    /** A try older than this is not checked any more. */
+    private const val TRIED_LIFETIME_MILLIS = 8_000L
+
     /** The app of the last try, until the screen that asked comes back and checks. */
     private var tried: LauncherEntry? = null
     private var triedFrom: Int = 0
+    private var triedAt = 0L
 
     /**
      * Opens [entry] beside the page of [activity]. From the task of the home
@@ -123,13 +127,24 @@ object AdjacentApps {
         )
         return runCatching {
             activity.startActivity(intent)
-            tried = entry
-            triedFrom = System.identityHashCode(activity)
+            noteTried(entry, System.identityHashCode(activity))
             true
         }.getOrElse {
             AppLog.w(TAG, "The side by side start failed, starting ${entry.key} the usual way", it)
             AppsRepository(activity).launch(entry)
         }
+    }
+
+    /** Remembers a try of [entry] from the screen with the identity hash [from]. */
+    internal fun noteTried(entry: LauncherEntry, from: Int, at: Long = System.currentTimeMillis()) {
+        tried = entry
+        triedFrom = from
+        triedAt = at
+    }
+
+    /** The try worked: the app is beside the screen, so there is nothing to report. */
+    internal fun triedWorked() {
+        tried = null
     }
 
     /** True when [activity] lives in the task of the home screen, which Android never splits. */
@@ -150,6 +165,10 @@ object AdjacentApps {
      */
     fun checkResult(activity: Activity): String? {
         val entry = tried ?: return null
+        if (System.currentTimeMillis() - triedAt > TRIED_LIFETIME_MILLIS) {
+            tried = null
+            return null
+        }
         if (System.identityHashCode(activity) != triedFrom) return null
         tried = null
         val beside = activity.isInMultiWindowMode
@@ -170,6 +189,7 @@ object AdjacentApps {
 fun ComponentActivity.watchAndroidSplit(split: SplitState, closeOnSplit: Boolean = true) {
     addOnMultiWindowModeChangedListener { info ->
         AppLog.i(TAG, "${javaClass.simpleName} multi-window: ${info.isInMultiWindowMode}")
+        if (info.isInMultiWindowMode) AdjacentApps.triedWorked()
         if (info.isInMultiWindowMode && closeOnSplit) split.close()
     }
     lifecycle.addObserver(

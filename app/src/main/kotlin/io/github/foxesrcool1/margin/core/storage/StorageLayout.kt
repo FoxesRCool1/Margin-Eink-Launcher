@@ -47,7 +47,16 @@ object StorageLayout {
     const val TYPED_NOTE_EXTENSION = "md"
     const val INK_NOTE_EXTENSION = "inknote"
 
-    fun bookPath(fileName: String): String = "$BOOKS/${safeName(fileName)}"
+    fun bookPath(fileName: String): String {
+        val rawExtension = fileName.substringAfterLast('.', "")
+        if (rawExtension.isBlank()) return "$BOOKS/${safeName(fileName)}"
+        val extension = safeName(rawExtension, MAX_NAME_BYTES / 2)
+        val stem = safeName(
+            fileName.substringBeforeLast('.'),
+            MAX_NAME_BYTES - 1 - extension.toByteArray(Charsets.UTF_8).size,
+        )
+        return "$BOOKS/$stem.$extension"
+    }
 
     fun annotationsPath(bookId: String): String = "$ANNOTATIONS/${safeName(bookId)}.json"
 
@@ -95,7 +104,7 @@ object StorageLayout {
      * everything else into a dash. Never end with a dot or a space, because
      * Windows refuses those. Never return an empty name.
      */
-    fun safeName(raw: String): String {
+    fun safeName(raw: String, maxBytes: Int = MAX_NAME_BYTES): String {
         val cleaned = buildString {
             raw.trim().forEach { character ->
                 when {
@@ -107,7 +116,7 @@ object StorageLayout {
         }
             .replace(Regex("-{2,}"), "-")
             .trim(' ', '.', '-')
-            .take(MAX_NAME_LENGTH)
+            .takeBytes(maxBytes)
             .trim(' ', '.', '-')
 
         return cleaned.ifBlank { "untitled" }
@@ -122,6 +131,7 @@ object StorageLayout {
      */
     fun bookIdFor(fileName: String, sizeBytes: Long): String {
         val stem = fileName.substringBeforeLast('.', fileName)
+        val suffix = "-$sizeBytes"
         val slug = safeName(stem)
             .lowercase(Locale.ROOT)
             .replace(' ', '-')
@@ -129,8 +139,10 @@ object StorageLayout {
             .replace('_', '-')
             .replace(Regex("-{2,}"), "-")
             .trim('-')
+            .takeBytes(MAX_NAME_BYTES - suffix.length)
+            .trim('-')
             .ifBlank { "book" }
-        return "$slug-$sizeBytes"
+        return "$slug$suffix"
     }
 
     /** True when the file is something the Reading tab can open. */
@@ -143,6 +155,21 @@ object StorageLayout {
     fun isInkNote(fileName: String): Boolean =
         fileName.endsWith(".$INK_NOTE_EXTENSION", ignoreCase = true)
 
-    private const val MAX_NAME_LENGTH = 120
+    /** Android allows 255 bytes per name; the rest is left for ".part-<nanoTime>" temp suffixes. */
+    private const val MAX_NAME_BYTES = 200
     private val ALLOWED_PUNCTUATION = setOf(' ', '.', '-', '_')
+
+    /** The longest prefix whose UTF-8 size is at most maxBytes, cut between code points. */
+    private fun String.takeBytes(maxBytes: Int): String {
+        var end = 0
+        var bytes = 0
+        while (end < length) {
+            val step = Character.charCount(codePointAt(end))
+            val size = substring(end, end + step).toByteArray(Charsets.UTF_8).size
+            if (bytes + size > maxBytes) break
+            bytes += size
+            end += step
+        }
+        return substring(0, end)
+    }
 }

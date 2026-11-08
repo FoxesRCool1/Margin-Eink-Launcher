@@ -3,7 +3,10 @@ package io.github.foxesrcool1.margin.core.books
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.FileStore
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
+import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -106,5 +109,25 @@ class BooksRepositoryTest {
             listOf("Read today", "Added yesterday", "Added last week"),
             books.byRecent().map { it.metadata.title },
         )
+    }
+
+    @Test
+    fun `deleting a book with a long name takes its ink folder too`() {
+        val folder = temporary.newFolder("Margin")
+        val store = LocalFileStore(folder)
+        val books = BooksRepository(DataRepository(store))
+        // A name this long makes the book id longer than the 120 characters a
+        // file name may hold, so the id and its safe name are not the same.
+        val name = "a".repeat(140) + ".epub"
+        store.write("books/$name", epub("A long name"))
+        val book = books.list().single()
+        assertTrue(book.bookId.length > 120)
+        val ink = "${StorageLayout.ANNOTATIONS}/${StorageLayout.safeName(book.bookId)}"
+        store.write("$ink/page-0001.strokes", ByteArray(8))
+
+        assertTrue(books.delete(book))
+        assertFalse(store.exists(book.path))
+        assertFalse(store.exists(StorageLayout.annotationsPath(book.bookId)))
+        assertFalse(store.exists(ink))
     }
 }

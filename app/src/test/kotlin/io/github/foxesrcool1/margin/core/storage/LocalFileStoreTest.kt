@@ -173,4 +173,46 @@ class LocalFileStoreTest {
         assertEquals("hello", output.toString("UTF-8"))
         assertFalse(store.copyTo("notes/missing.md", output))
     }
+
+    @Test
+    fun `writing onto a folder is refused, and the folder is left as it is`() {
+        store.writeText("notes/inside.md", "keep me")
+        assertFalse(store.writeText("notes", "x"))
+        assertTrue(store.isDirectory("notes"))
+        assertEquals("keep me", store.readText("notes/inside.md"))
+
+        val siblings = root.listFiles()!!.filter { it.name.startsWith("notes.old-") }
+        assertTrue("a folder was moved aside: $siblings", siblings.isEmpty())
+    }
+
+    @Test
+    fun `listings hide temporary and renaming leftovers but keep unreadable copies`() {
+        store.writeText("notes/real.md", "r")
+        store.writeText("notes/x.md.part-123", "p")
+        store.writeText("notes/y.md.old-456", "o")
+        store.writeText("notes/z.renaming", "z")
+        store.writeText("notes/keep.md.unreadable", "u")
+
+        val names = store.list("notes").map { it.name }
+        assertEquals(listOf("keep.md.unreadable", "real.md"), names)
+
+        val recursive = store.listFilesRecursively("notes").map { it.name }
+        assertEquals(listOf("keep.md.unreadable", "real.md"), recursive)
+    }
+
+    @Test
+    fun `sweeping removes only old part files`() {
+        store.writeText("notes/sub/old.md.part-1", "a")
+        store.writeText("notes/sub/fresh.md.part-2", "b")
+        store.writeText("notes/sub/plain.md", "c")
+        val twoDaysAgo = System.currentTimeMillis() - 2L * 24 * 60 * 60 * 1000
+        assertTrue(File(root, "notes/sub/old.md.part-1").setLastModified(twoDaysAgo))
+
+        val deleted = store.sweepLeftovers(24L * 60 * 60 * 1000)
+
+        assertEquals(1, deleted)
+        assertFalse(store.exists("notes/sub/old.md.part-1"))
+        assertTrue(store.exists("notes/sub/fresh.md.part-2"))
+        assertTrue(store.exists("notes/sub/plain.md"))
+    }
 }

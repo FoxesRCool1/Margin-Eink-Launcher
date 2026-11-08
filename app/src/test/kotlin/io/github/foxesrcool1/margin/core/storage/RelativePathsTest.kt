@@ -42,12 +42,30 @@ class RelativePathsTest {
             "C:/Windows/system32",
             "notes/./plan.md",
             "notes\\..\\..\\secrets",
-            " notes/plan.md",
-            "notes/ plan.md",
+            "C:",
+            "C:/x",
+            "c:/Windows",
         )
         attempts.forEach { attempt ->
             assertFalse("should be refused: $attempt", RelativePaths.isSafe(attempt))
         }
+    }
+
+    @Test
+    fun `names with spaces and colons inside them are allowed`() {
+        assertEquals("Drafts /x.md", RelativePaths.normalise("Drafts /x.md"))
+        assertEquals(" lead.md", RelativePaths.normalise(" lead.md"))
+        assertEquals("1: Intro.md", RelativePaths.normalise("1: Intro.md"))
+        assertEquals("a:b", RelativePaths.normalise("a:b"))
+        assertEquals("a: b", RelativePaths.normalise("a: b"))
+        assertEquals("notes/ plan.md", RelativePaths.normalise("notes/ plan.md"))
+    }
+
+    @Test
+    fun `a parent step or a drive letter at the start is refused`() {
+        assertFalse(RelativePaths.isSafe("../x"))
+        assertFalse(RelativePaths.isSafe("C:"))
+        assertFalse(RelativePaths.isSafe("C:/x"))
     }
 
     @Test(expected = UnsafePathException::class)

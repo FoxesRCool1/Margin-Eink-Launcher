@@ -53,6 +53,7 @@ internal fun PanePage.holds(): Set<String> = when (this) {
         "file:" + StorageLayout.readingNotePath(bookTitle.ifBlank { UNTITLED_BOOK }, handwritten = true),
     )
     is PanePage.JournalDay -> setOf(
+        "tab:Journal",
         "file:" + StorageLayout.journalPath(date),
         "file:" + StorageLayout.journalPath(date, handwritten = true),
     )

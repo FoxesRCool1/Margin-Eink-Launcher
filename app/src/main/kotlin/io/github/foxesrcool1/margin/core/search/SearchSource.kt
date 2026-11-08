@@ -77,7 +77,8 @@ class SearchSource(private val data: DataRepository) {
     /**
      * One document per highlight, from every annotations file. The text is the
      * marked words and the note the user wrote on them, so a search finds the
-     * note as well as the words of the book.
+     * note as well as the words of the book. A file whose book is no longer in
+     * the data folder is skipped: the hit would open nothing.
      */
     private fun highlights(): List<SearchDoc> {
         val files = data.store.list(StorageLayout.ANNOTATIONS)
@@ -89,6 +90,10 @@ class SearchSource(private val data: DataRepository) {
                 io.github.foxesrcool1.margin.core.reading.AnnotationsFile.parse(text)
             }.getOrNull() ?: run {
                 AppLog.w(TAG, "The search could not read ${file.relativePath}")
+                return@flatMap emptyList()
+            }
+            if (!data.store.exists(annotations.bookPath)) {
+                AppLog.w(TAG, "Skipping ${file.relativePath}: the book ${annotations.bookPath} is not in the data folder")
                 return@flatMap emptyList()
             }
             val title = annotations.title.ifBlank {

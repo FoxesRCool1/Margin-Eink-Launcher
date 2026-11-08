@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import io.github.foxesrcool1.margin.core.log.AppLog
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "ScreenRefresh"
 
@@ -39,6 +40,17 @@ object ScreenRefresh {
 
     private val main by lazy { Handler(Looper.getMainLooper()) }
 
+    /** Counts the runs, so only the newest one puts the mode back. */
+    private val latestRun = AtomicInteger()
+
+    /**
+     * The mode to put back while a run waits to restore it, or null. A second
+     * run inside that window finds the panel in the full mode the first one
+     * set, and must not take that for the user's mode. Vendor thread only.
+     */
+    @Volatile
+    private var pendingRestore: RefreshMode? = null
+
     /** Call on the main thread. A second call while the black is up does nothing. */
     fun run(activity: Activity) = run(activity, EinkDevices.get(activity))
 
@@ -62,14 +74,17 @@ object ScreenRefresh {
         // restoreTo; the restore reads them.
         var fullMode = false
         var restoreTo: RefreshMode? = null
+        val mine = latestRun.incrementAndGet()
         EinkThread.run {
-            val before = if (device.hasVendorControl) device.refreshMode() else null
+            val read = if (device.hasVendorControl) device.refreshMode() else null
+            val before = pendingRestore ?: read
             // A panel found in the full mode already is one a refresh left behind,
             // after the app died in the middle of one or a call to put it back
             // failed. It goes to the reading mode after this one, and heals.
             restoreTo = if (before == RefreshMode.Full) RefreshMode.Reading else before
             fullMode = before != null &&
-                (before == RefreshMode.Full || device.setRefreshMode(RefreshMode.Full).ok)
+                (read == RefreshMode.Full || device.setRefreshMode(RefreshMode.Full).ok)
+            pendingRestore = restoreTo.takeIf { fullMode }
             AppLog.i(TAG, "Force refresh. Vendor full mode: ${if (fullMode) "on, was ${before?.name}" else "not used"}")
         }
 
@@ -79,6 +94,9 @@ object ScreenRefresh {
             (cover.parent as? ViewGroup)?.removeView(cover)
             main.postDelayed({
                 EinkThread.run {
+                    // A newer run found the panel in the full mode and will put the mode back itself.
+                    if (mine != latestRun.get()) return@run
+                    pendingRestore = null
                     val back = restoreTo
                     if (fullMode && back != null) device.setRefreshMode(back)
                 }

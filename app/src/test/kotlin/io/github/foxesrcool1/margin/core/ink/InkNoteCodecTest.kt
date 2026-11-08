@@ -65,6 +65,33 @@ class InkNoteCodecTest {
     }
 
     @Test
+    fun `a format version below one or not a whole number is refused`() {
+        for (version in listOf("0", "-1", "1.5")) {
+            expectRefused(zipOf("meta.json" to """{"formatVersion": $version}""".toByteArray()))
+        }
+    }
+
+    @Test
+    fun `a gap in the page numbers refuses the note`() {
+        val strokes = StrokesCodec.encode(emptyList())
+        expectRefused(
+            zipOf(
+                "meta.json" to """{"formatVersion": 1}""".toByteArray(),
+                "pages/0001.strokes" to strokes,
+                "pages/0003.strokes" to strokes,
+            ),
+        )
+    }
+
+    @Test
+    fun `an empty note file is damaged and not missing`() {
+        val store = LocalFileStore(temporary.newFolder("Margin"))
+        val notes = InkNotesRepository(DataRepository(store).also { it.ensureFolders() })
+        store.write("notes/empty.inknote", ByteArray(0))
+        assertTrue(notes.load("notes/empty.inknote") is InkNoteLoad.Damaged)
+    }
+
+    @Test
     fun `something that is not a zip is refused`() {
         try {
             InkNoteCodec.decode("hello".toByteArray())
@@ -104,6 +131,15 @@ class InkNoteCodecTest {
         assertEquals(PageTemplate.Lined, loaded.note.template)
 
         assertEquals("notes/Sketch- one 2.inknote", notes.create("notes", "Sketch: one", PageTemplate.Blank))
+    }
+
+    private fun expectRefused(bytes: ByteArray) {
+        try {
+            InkNoteCodec.decode(bytes)
+            fail("should have been refused")
+        } catch (expected: StrokesFormatException) {
+            assertNotNull(expected.message)
+        }
     }
 
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray {

@@ -22,8 +22,13 @@ class PaneInk(private val activity: Activity, private val scope: LifecycleCorout
     private var canvas: InkCanvasView? = null
     private var session: FastPenSession? = null
 
+    /** True between [pause] and [resume]. A layout change in that time must not start the pen again. */
+    private var paused = false
+
     /** The half moved or changed size: a turn, or a swap. The tablet has to draw in the new box. */
-    private val refit = android.view.View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> session?.start() }
+    private val refit = android.view.View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (!paused) session?.start()
+    }
 
     fun serve(next: InkCanvasView?) {
         if (next === canvas && session != null) return
@@ -32,10 +37,11 @@ class PaneInk(private val activity: Activity, private val scope: LifecycleCorout
         canvas?.removeOnLayoutChangeListener(refit)
         canvas = next
         next?.addOnLayoutChangeListener(refit)
-        if (next != null) resume()
+        if (next != null && !paused) resume()
     }
 
     fun resume() {
+        paused = false
         val view = canvas ?: return
         if (session != null) {
             session?.start()
@@ -48,13 +54,14 @@ class PaneInk(private val activity: Activity, private val scope: LifecycleCorout
             val delayMillis = settings.inkRedrawDelayMillis.first()
             // The canvas has no size until it has been laid out once.
             view.post {
-                if (view !== canvas || view.width == 0 || session != null) return@post
+                if (paused || view !== canvas || view.width == 0 || session != null) return@post
                 session = FastPenSession(activity, view, mode, delayMillis).also { it.start() }
             }
         }
     }
 
     fun pause() {
+        paused = true
         session?.stop()
     }
 }

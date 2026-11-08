@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Check out the code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The app works its version code out of the version name, and the
       # updater compares the tag with it. A tag that says one thing while the
@@ -55,7 +55,7 @@ jobs:
           fi
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
           java-version: "21"
@@ -83,12 +83,17 @@ jobs:
         id: key
         env:
           KEYSTORE_BASE64: ${{ secrets.EINK_RELEASE_KEYSTORE_BASE64 }}
+          REPO_NAME: ${{ github.repository }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
             echo "present=true" >> "$GITHUB_OUTPUT"
             echo "The release key is set. Building signed release APKs only."
           else
+            if [ "$REPO_NAME" = "FoxesRCool1/Margin-Eink-Launcher" ]; then
+              echo "::error::The release key secret is missing. Refusing to publish a debug-signed build."
+              exit 1
+            fi
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "No release key. Building debug APKs only."
           fi

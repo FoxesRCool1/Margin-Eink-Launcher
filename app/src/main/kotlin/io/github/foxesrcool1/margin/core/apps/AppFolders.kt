@@ -1,6 +1,7 @@
 package io.github.foxesrcool1.margin.core.apps
 
 import io.github.foxesrcool1.margin.core.json.Json
+import io.github.foxesrcool1.margin.core.json.JsonArray
 import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.json.jsonArrayOf
 import io.github.foxesrcool1.margin.core.json.jsonOf
@@ -115,28 +116,41 @@ object AppFoldersFile {
         ),
     )
 
+    /** The folders read from the file, and how many entries were dropped while reading them. */
+    data class Parsed(val folders: AppFolders, val dropped: Int)
+
     /**
      * Returns null when the text is not this file at all. One bad folder is
      * dropped and the others are kept, for the same reason as in the habits
      * file: one stray comma must not cost the user everything else.
      */
-    fun parse(text: String): AppFolders? {
+    fun parse(text: String): AppFolders? = parseCounting(text)?.folders
+
+    /**
+     * Like [parse], and also counts what was dropped: a folders value that is
+     * not a list, and each entry that is not an object, has no name, or
+     * repeats a name of an earlier folder.
+     */
+    fun parseCounting(text: String): Parsed? {
         val root = Json.parseOrNull(text) as? JsonObject ?: return null
         if (root.int("version") == null) return null
 
-        val folders = root.array("folders")
-            ?.objects()
-            ?.mapNotNull { entry ->
-                val name = entry.string("name")?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-                val apps = entry.array("apps")?.strings().orEmpty().filter { it.isNotBlank() }.distinct()
+        val rawFolders = root["folders"]
+        val entries = (rawFolders as? JsonArray)?.items.orEmpty()
+        val folders = entries
+            .mapNotNull { entry ->
+                val folder = entry as? JsonObject ?: return@mapNotNull null
+                val name = folder.string("name")?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val apps = folder.array("apps")?.strings().orEmpty().filter { it.isNotBlank() }.distinct()
                 AppFolder(name.take(AppFolders.MAX_NAME_LENGTH), apps)
             }
-            ?.distinctBy { it.name.lowercase(Locale.ROOT) }
-            ?: emptyList()
+            .distinctBy { it.name.lowercase(Locale.ROOT) }
+        val notAList = if (rawFolders != null && rawFolders !is JsonArray) 1 else 0
+        val dropped = entries.size - folders.size + notAList
 
         // A file from before hiding existed has no "hidden" list. That is fine.
         val hidden = root.array("hidden")?.strings().orEmpty().filter { it.isNotBlank() }.distinct()
 
-        return AppFolders(folders, hidden)
+        return Parsed(AppFolders(folders, hidden), dropped)
     }
 }

@@ -29,6 +29,7 @@ import io.github.foxesrcool1.margin.core.reading.ReadingProgress
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
+import io.github.foxesrcool1.margin.design.components.EinkSeparator
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.ConfirmDialog
@@ -72,7 +73,7 @@ fun ReaderChrome(state: ReaderUiState, actions: ReaderActions) {
             )
 
             else -> when (val panel = state.panel) {
-                ReaderPanel.None -> Unit
+                ReaderPanel.None -> StatusStrip(state, Modifier.align(Alignment.BottomCenter))
                 ReaderPanel.Menu -> MenuBar(state, actions, Modifier.align(Alignment.TopCenter))
                 ReaderPanel.Contents -> ContentsPanel(state, actions)
                 ReaderPanel.Notes -> NotesPanel(state, actions)
@@ -81,6 +82,25 @@ fun ReaderChrome(state: ReaderUiState, actions: ReaderActions) {
                 is ReaderPanel.NoteEditor -> NoteEditorPanel(state, panel.highlightId, actions)
             }
         }
+    }
+}
+
+/**
+ * One line at the bottom of the page when nothing is open: the standing
+ * warning, or the transient notice. Nothing is drawn when both are gone.
+ */
+@Composable
+private fun StatusStrip(state: ReaderUiState, modifier: Modifier = Modifier) {
+    val text = state.warning ?: state.notice
+    if (text == null) return
+    Column(modifier = modifier.fillMaxWidth().background(EinkColors.Paper)) {
+        HairlineDivider(thickness = EinkDimens.hairline)
+        CapsLabel(
+            text = text,
+            style = EinkType.capsSmall,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
     }
 }
 
@@ -272,6 +292,10 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
             }
         },
     ) {
+        state.warning?.let {
+            CapsLabel(text = it, style = EinkType.capsSmall, maxLines = 2)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         state.notice?.let {
             CapsLabel(text = it, style = EinkType.capsSmall, maxLines = 2)
             Spacer(modifier = Modifier.height(8.dp))
@@ -290,7 +314,7 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
                 EinkText(text = highlight.text.ifBlank { "(no text)" }, style = EinkType.body.copy(color = colour), maxLines = 2)
                 CapsLabel(
                     text = noteSummary(highlight),
-                    style = EinkType.capsSmall.copy(color = if (pressed) EinkColors.Paper else EinkColors.Faded),
+                    style = EinkType.capsSmall.copy(color = if (pressed) EinkColors.Paper else EinkColors.Ink),
                 )
             }
             HairlineDivider(color = EinkColors.Faded)
@@ -300,8 +324,8 @@ private fun NotesPanel(state: ReaderUiState, actions: ReaderActions) {
 
 private fun noteSummary(highlight: Highlight): String = buildString {
     append("${ReadingProgress.percent(highlight.progression)}%")
-    if (highlight.chapter.isNotBlank()) append("  .  ").append(highlight.chapter)
-    if (highlight.note.isNotBlank()) append("  .  ").append(highlight.note.lineSequence().first())
+    if (highlight.chapter.isNotBlank()) append(EinkSeparator).append(highlight.chapter)
+    if (highlight.note.isNotBlank()) append(EinkSeparator).append(highlight.note.lineSequence().first())
     if (highlight.inkNotePath.isNotBlank()) append("  .  handwritten note")
 }
 

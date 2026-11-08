@@ -104,6 +104,19 @@ class ScreenRefreshTest {
     }
 
     @Test
+    fun `two refreshes 600 ms apart still put the first mode back`() {
+        val device = RecordingDevice(mode = RefreshMode.Browse)
+
+        ScreenRefresh.run(activity, device)
+        waitFor(600)
+        ScreenRefresh.run(activity, device)
+        waitForAll()
+
+        assertEquals(RefreshMode.Browse, device.mode)
+        assertEquals(false, device.modes.contains(RefreshMode.Reading))
+    }
+
+    @Test
     fun `a device with no vendor control still flashes`() {
         val device = RecordingDevice(hasVendorControl = false)
 

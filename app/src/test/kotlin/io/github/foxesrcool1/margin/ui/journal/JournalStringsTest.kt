@@ -1,6 +1,7 @@
 package io.github.foxesrcool1.margin.ui.journal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -110,5 +111,22 @@ class JournalStringsTest {
             LocalDate.of(2024, 2, 29),
             JournalStrings.stepMonth(LocalDate.of(2024, 1, 30), 30, 1),
         )
+    }
+
+    @Test
+    fun `the same text is not an unsaved edit`() {
+        assertFalse(hasUnsavedText(saved = "Walked the dog", typed = "Walked the dog"))
+        assertFalse(hasUnsavedText(saved = "", typed = ""))
+    }
+
+    @Test
+    fun `changed text is an unsaved edit`() {
+        assertTrue(hasUnsavedText(saved = "Walked the dog", typed = "Walked the cat"))
+        assertTrue(hasUnsavedText(saved = "", typed = "New words"))
+    }
+
+    @Test
+    fun `trailing whitespace alone is not an unsaved edit`() {
+        assertFalse(hasUnsavedText(saved = "Walked the dog", typed = "Walked the dog  \n"))
     }
 }

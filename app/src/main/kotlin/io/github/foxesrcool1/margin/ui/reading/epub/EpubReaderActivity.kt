@@ -21,6 +21,7 @@ import androidx.fragment.app.commitNow
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withStarted
 import io.github.foxesrcool1.margin.core.eink.ScreenRefresh
+import io.github.foxesrcool1.margin.design.components.EinkSeparator
 import io.github.foxesrcool1.margin.core.habits.DayBoundary
 import io.github.foxesrcool1.margin.core.habits.HabitsRepository
 import io.github.foxesrcool1.margin.core.log.AppLog
@@ -65,6 +66,7 @@ import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.ReadingProgression
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -73,6 +75,13 @@ import java.time.ZoneId
 private const val TAG = "EpubReader"
 private const val NAVIGATOR_TAG = "epub-navigator"
 private const val HIGHLIGHT_GROUP = "highlights"
+
+/**
+ * A physical step, +1 or -1, as the book reads it.
+ *
+ * Chosen: flip the sign for RTL books; Readium 3.4 has no goLeft/goRight.
+ */
+internal fun pageStep(rtl: Boolean, physical: Int): Int = if (rtl) -physical else physical
 
 /** One line of the table of contents. */
 data class TocRow(val title: String, val depth: Int, val link: Link)
@@ -101,6 +110,9 @@ class ReaderUiState {
     var placeLabel by mutableStateOf("")
     var secondsToday by mutableStateOf(0L)
     var notice by mutableStateOf<String?>(null)
+
+    /** A standing warning the reader must keep seeing. Never cleared. */
+    var warning by mutableStateOf<String?>(null)
 
     /** What is typed in the note editor and not saved yet. Null until the first key. */
     var noteDraft by mutableStateOf<String?>(null)
@@ -195,7 +207,7 @@ class EpubReaderActivity : FragmentActivity() {
 
         root = SwipeInterceptLayout(this).apply {
             setBackgroundColor(Color.WHITE)
-            onSwipe = { direction -> turnPage(direction) }
+            onSwipe = { direction -> turnPage(pageStep(isRtl(), direction)) }
         }
         val container = FragmentContainerView(this).apply { id = CONTAINER_ID }
         root.addView(container, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -249,6 +261,15 @@ class EpubReaderActivity : FragmentActivity() {
      * from the network: the engine hands them over from the file.
      */
     private fun keepBooksOffline() {
+        // A service worker of a book page would reach the network too, so the
+        // whole controller is put offline at once, not page by page.
+        runCatching {
+            android.webkit.ServiceWorkerController.getInstance().serviceWorkerWebSettings.blockNetworkLoads = true
+        }.onSuccess {
+            AppLog.d(TAG, "A book page is offline: ${android.webkit.ServiceWorkerController.getInstance().serviceWorkerWebSettings.blockNetworkLoads}")
+        }.onFailure {
+            AppLog.w(TAG, "Could not block network loads of the service workers", it)
+        }
         supportFragmentManager.registerFragmentLifecycleCallbacks(
             object : androidx.fragment.app.FragmentManager.FragmentLifecycleCallbacks() {
                 override fun onFragmentViewCreated(
@@ -315,8 +336,11 @@ class EpubReaderActivity : FragmentActivity() {
      */
     private fun keepPlaceAcrossNewLayout() {
         val place = navigator?.currentLocator?.value ?: return
+        val turns = pageTurns
         root.postDelayed({
-            if (!isDestroyed) navigator?.go(place, animated = false)
+            // The reader may have turned a page while the new pages were being
+            // made; then the jump back would undo it.
+            if (!isDestroyed && pageTurns == turns) navigator?.go(place, animated = false)
         }, NEW_LAYOUT_SETTLE_MILLIS)
     }
 
@@ -345,7 +369,7 @@ class EpubReaderActivity : FragmentActivity() {
         publication = opened
         if (ui.title.isBlank()) ui.title = opened.metadata.title.orEmpty()
         ui.annotations = annotations.copy(bookPath = bookPath, title = ui.title)
-        if (reading.savesBlocked(bookId)) ui.notice = "Old notes are unreadable. Nothing new is saved."
+        if (reading.savesBlocked(bookId)) ui.warning = "Old notes are unreadable. Nothing new is saved."
         ui.contents = flatten(opened.tableOfContents, 0)
         val day = today()
         loggedSecondsToday = withContext(AppDispatchers.io) { reading.secondsReadOn(day) }
@@ -454,6 +478,7 @@ class EpubReaderActivity : FragmentActivity() {
     private fun turnPage(direction: Int) {
         val current = navigator ?: return
         if (ui.panel != ReaderPanel.None || ui.selecting) return
+        ui.notice = null
         val moved = if (direction > 0) current.goForward(animated = false) else current.goBackward(animated = false)
         if (!moved) return
         timer.activity(nowSeconds())
@@ -466,12 +491,13 @@ class EpubReaderActivity : FragmentActivity() {
     private val tapListener = object : InputListener {
         override fun onTap(event: TapEvent): Boolean {
             if (ui.selecting) return false
+            ui.notice = null
             val width = root.width.takeIf { it > 0 } ?: return false
             val x = event.point.x
             when {
                 ui.panel != ReaderPanel.None -> closePanel()
-                x < width * 0.3f -> turnPage(-1)
-                x > width * 0.7f -> turnPage(1)
+                x < width * 0.3f -> turnPage(pageStep(isRtl(), -1))
+                x > width * 0.7f -> turnPage(pageStep(isRtl(), 1))
                 else -> {
                     ui.secondsToday = todaySeconds()
                     ui.panel = ReaderPanel.Menu
@@ -502,13 +528,19 @@ class EpubReaderActivity : FragmentActivity() {
 
     // -- The place in the book -------------------------------------------------------
 
+    /** Whether the book reads right to left, in its own words. */
+    private fun isRtl(): Boolean =
+        publication?.metadata?.readingProgression == ReadingProgression.RTL
+
     private fun onPlaceChanged(locator: Locator) {
-        val progress = locator.locations.totalProgression ?: 0.0
+        // A locator without a total keeps the last known progress instead of
+        // resetting it to zero.
+        val progress = locator.locations.totalProgression ?: ui.annotations.progress
         val position = locator.locations.position
         ui.placeLabel = buildString {
             append(ReadingProgress.mark(progress) ?: "0%")
             if (position != null) append("  .  position $position")
-            locator.title?.takeIf { it.isNotBlank() }?.let { append("  .  ").append(it) }
+            locator.title?.takeIf { it.isNotBlank() }?.let { append(EinkSeparator).append(it) }
         }
         ui.annotations = ui.annotations.copy(position = locator.toJsonObject(), progress = progress)
 
@@ -706,6 +738,8 @@ class EpubReaderActivity : FragmentActivity() {
         override fun close() = finish()
 
         override fun show(panel: ReaderPanel) {
+            // Transient notices go away when the reader opens a panel. The
+            // standing warning stays, and it is never cleared.
             ui.notice = null
             ui.panel = panel
         }
@@ -793,6 +827,17 @@ class EpubReaderActivity : FragmentActivity() {
             val after = settings.clamped()
             ui.settings = after
             navigator?.submitPreferences(after.toEpubPreferences())
+            // A new font, size, margin or line height cuts the text into pages
+            // again, and the engine lands a page or two away, as it does when
+            // the width changes.
+            if (
+                before.font != after.font ||
+                before.fontSizePercent != after.fontSizePercent ||
+                before.marginPercent != after.marginPercent ||
+                before.lineHeightPercent != after.lineHeightPercent
+            ) {
+                keepPlaceAcrossNewLayout()
+            }
             lifecycleScope.launch {
                 settingsStore.setReader(after)
                 if (before.underlineHighlights != after.underlineHighlights) showHighlights()

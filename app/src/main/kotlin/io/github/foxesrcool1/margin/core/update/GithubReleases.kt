@@ -64,33 +64,40 @@ class GithubReleases(
     fun download(asset: ReleaseAsset, token: String?, directory: File, onPercent: (Int) -> Unit): Result<File> =
         runCatching {
             // The name comes from the network. Keep only the last part of it.
+            // The token is only ever sent to the GitHub API, never to another address.
+            if (!asset.apiUrl.startsWith("$apiBase/")) throw IOException("The download address is not GitHub.")
+
             val safeName = File(asset.name).name
             val target = File(directory, safeName)
             if (target.isFile && matches(target, asset)) return@runCatching target
 
             directory.mkdirs()
+            if (asset.sizeBytes > 0 && asset.sizeBytes > directory.usableSpace / 2) {
+                throw IOException("Not enough space.")
+            }
             val part = File(directory, "$safeName.part")
-            var lastPercent = -1
-            val code = http.download(asset.apiUrl, headers(token, ACCEPT_BINARY), part) { bytes ->
-                if (asset.sizeBytes > 0) {
-                    val percent = ((bytes * 100) / asset.sizeBytes).toInt().coerceIn(0, 100)
-                    if (percent != lastPercent) {
-                        lastPercent = percent
-                        onPercent(percent)
+            var whole = false
+            try {
+                var lastPercent = -1
+                val code = http.download(asset.apiUrl, headers(token, ACCEPT_BINARY), part) { bytes ->
+                    if (asset.sizeBytes > 0) {
+                        val percent = ((bytes * 100) / asset.sizeBytes).toInt().coerceIn(0, 100)
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onPercent(percent)
+                        }
                     }
                 }
+                if (code != 200) throw IOException("GitHub answered HTTP $code for the file.")
+                if (!matches(part, asset)) throw IOException("The file did not arrive whole. Try again.")
+                target.delete()
+                if (!part.renameTo(target)) throw IOException("The file could not be saved.")
+                whole = true
+                target
+            } finally {
+                // Any failure, including an exception from the stream, leaves no partial file behind.
+                if (!whole) part.delete()
             }
-            if (code != 200) {
-                part.delete()
-                throw IOException("GitHub answered HTTP $code for the file.")
-            }
-            if (!matches(part, asset)) {
-                part.delete()
-                throw IOException("The file did not arrive whole. Try again.")
-            }
-            target.delete()
-            if (!part.renameTo(target)) throw IOException("The file could not be saved.")
-            target
         }
 
     private fun matches(file: File, asset: ReleaseAsset): Boolean {

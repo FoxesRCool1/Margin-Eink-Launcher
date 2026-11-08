@@ -28,3 +28,12 @@ app/build/outputs/roborazzi/
 keystore/release.keystore
 keystore/*.jks
 *.keystore.properties
+
+# Keys and secrets
+*.keystore
+!keystore/debug.keystore
+*.jks
+*.p12
+*.pem
+password.txt
+.env*

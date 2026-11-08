@@ -1,5 +1,8 @@
 package io.github.foxesrcool1.margin.core.storage
 
+import io.github.foxesrcool1.margin.core.json.Json
+import io.github.foxesrcool1.margin.core.json.JsonObject
+import io.github.foxesrcool1.margin.core.json.JsonString
 import io.github.foxesrcool1.margin.core.log.AppLog
 import java.io.IOException
 import java.io.InputStream
@@ -25,6 +28,8 @@ data class RestoreResult(
     val refused: List<String>,
     /** True when the zip was damaged or cut short. The files counted above were still restored. */
     val stoppedEarly: Boolean = false,
+    /** The app settings from settings.json at the root of the archive. Empty when there were none. */
+    val settings: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -37,12 +42,14 @@ data class RestoreResult(
 object BackupArchive {
 
     const val MANIFEST_NAME = "margin-backup.txt"
+    const val SETTINGS_NAME = "settings.json"
     const val FORMAT_VERSION = 1
 
     fun backup(
         store: FileStore,
         output: OutputStream,
         folders: List<String> = StorageLayout.backedUpFolders,
+        settings: Map<String, String> = emptyMap(),
     ): BackupResult {
         var fileCount = 0
         var byteCount = 0L
@@ -57,27 +64,55 @@ object BackupArchive {
             zip.write(manifest.toByteArray())
             zip.closeEntry()
 
+            if (settings.isNotEmpty()) {
+                val text = Json.write(JsonObject(settings.mapValues { JsonString(it.value) }))
+                zip.putNextEntry(ZipEntry(SETTINGS_NAME))
+                zip.write(text.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+
             folders.forEach { folder ->
                 store.listFilesRecursively(folder).forEach { entry ->
-                    // Open the file first. An entry added before a failed read
-                    // would stay in the zip empty, and a restore would then
-                    // write that empty file over the real one.
-                    // ponytail: a read that fails half way still leaves a short entry.
-                    val written = runCatching {
-                        val input = store.openInput(entry.relativePath) ?: return@runCatching false
-                        input.use {
+                    val input = runCatching { store.openInput(entry.relativePath) }.getOrNull()
+                    if (input == null) {
+                        AppLog.w(TAG, "Backup could not open ${entry.relativePath}")
+                        skipped += entry.relativePath
+                        return@forEach
+                    }
+
+                    // Only a failed read skips the file. A failed write belongs to the
+                    // zip output and must reach the caller, so the write is not in the try.
+                    var readFailed = false
+                    input.use { source ->
+                        val buffer = ByteArray(8192)
+                        fun readChunk(): Int = try {
+                            source.read(buffer)
+                        } catch (problem: IOException) {
+                            AppLog.w(TAG, "Backup could not read ${entry.relativePath}", problem)
+                            readFailed = true
+                            -1
+                        }
+
+                        // The first read happens before the entry exists. If it fails,
+                        // no entry is written and the file is listed in skipped.
+                        var read = readChunk()
+                        if (!readFailed) {
                             zip.putNextEntry(ZipEntry(entry.relativePath))
-                            it.copyTo(zip)
+                            while (read >= 0) {
+                                zip.write(buffer, 0, read)
+                                read = readChunk()
+                            }
+                            // A read that fails after the first chunk leaves a short entry,
+                            // and the file is still listed in skipped.
                             zip.closeEntry()
                         }
-                        true
-                    }.getOrDefault(false)
+                    }
 
-                    if (written) {
+                    if (readFailed) {
+                        skipped += entry.relativePath
+                    } else {
                         fileCount++
                         byteCount += entry.sizeBytes
-                    } else {
-                        skipped += entry.relativePath
                     }
                 }
             }
@@ -107,6 +142,7 @@ object BackupArchive {
         var byteCount = 0L
         val refused = mutableListOf<String>()
         var stoppedEarly = false
+        var settings: Map<String, String> = emptyMap()
 
         ZipInputStream(input.buffered()).use { zip ->
             // A zip that is cut short throws in the middle of the loop, after
@@ -121,10 +157,21 @@ object BackupArchive {
                         continue
                     }
 
+                    if (rawName == SETTINGS_NAME) {
+                        settings = readSettings(zip)
+                        zip.closeEntry()
+                        continue
+                    }
+
                     val safePath = runCatching { RelativePaths.normalise(rawName) }.getOrNull()
                     val topFolder = safePath?.substringBefore('/')
 
-                    if (safePath == null || safePath.isEmpty() || topFolder !in folders) {
+                    // A name with no folder above it would be a file where a folder belongs.
+                    // An existing folder is never replaced by a file.
+                    if (safePath == null || safePath.isEmpty() || !safePath.contains('/') ||
+                        safePath.substringAfterLast('/').isEmpty() || topFolder !in folders ||
+                        store.isDirectory(safePath)
+                    ) {
                         refused += rawName
                         zip.closeEntry()
                         continue
@@ -153,7 +200,19 @@ object BackupArchive {
             }
         }
 
-        return RestoreResult(fileCount, byteCount, refused, stoppedEarly)
+        return RestoreResult(fileCount, byteCount, refused, stoppedEarly, settings)
+    }
+
+    /** Reads settings.json. Only string values are kept. A damaged file gives no settings. */
+    private fun readSettings(zip: ZipInputStream): Map<String, String> {
+        val parsed = Json.parseOrNull(zip.readBytes().toString(Charsets.UTF_8)) as? JsonObject
+        if (parsed == null) {
+            AppLog.w(TAG, "settings.json could not be read")
+            return emptyMap()
+        }
+        return parsed.entries
+            .mapNotNull { (key, value) -> (value as? JsonString)?.let { key to it.value } }
+            .toMap()
     }
 
     /** Reads a zip entry without letting the reader close the archive. */

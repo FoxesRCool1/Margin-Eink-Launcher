@@ -49,6 +49,9 @@ object SpeedWatch {
 
         /** Reading the notes, the journal, and the highlights, and working out the match. */
         const val SEARCH = 800L
+
+        /** Reading the list of apps for the Apps tab. */
+        const val APPS_LOAD = 400L
     }
 
     /** Writes a "Slow:" line when [millis] is over [budget], and nothing when it is not. */
@@ -71,6 +74,13 @@ object SpeedWatch {
         coldStartChecked = true
         check("The start of Home", millis, Budget.COLD_START)
     }
+
+    /** The class name of the first activity this process created. Set by MarginApp. */
+    @Volatile
+    internal var firstActivity: String? = null
+
+    /** True when Home is the first activity of the process, so the process start is its start. */
+    internal fun homeStartedProcess(first: String?, home: String): Boolean = first == home
 
     /**
      * Code that does disk work on the main thread on purpose, each for a

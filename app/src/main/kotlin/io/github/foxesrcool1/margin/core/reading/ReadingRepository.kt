@@ -44,7 +44,10 @@ class ReadingRepository(private val data: DataRepository) {
     /** False when the file on disk could not be read: see [savesBlocked]. */
     fun save(bookId: String, annotations: BookAnnotations): Boolean {
         if (savesBlocked(bookId)) return false
-        return data.store.writeText(StorageLayout.annotationsPath(bookId), AnnotationsFile.serialise(annotations))
+        // The stamp is what the library sorts by, and it must be the moment
+        // the reader saves, not whatever the file held before.
+        val stamped = annotations.copy(lastOpened = System.currentTimeMillis())
+        return data.store.writeText(StorageLayout.annotationsPath(bookId), AnnotationsFile.serialise(stamped))
     }
 
     /** True after [load] met a file it could not read. The reader says so. */
@@ -80,19 +83,30 @@ class ReadingRepository(private val data: DataRepository) {
 
     fun addReadingTime(bookId: String, date: LocalDate, seconds: Long) {
         if (seconds <= 0) return
-        val path = StorageLayout.readingLogPath()
-        val old = try {
-            data.store.readTextOrThrow(path)
-        } catch (problem: IOException) {
-            // Writing now would start the log again and lose every day in it.
-            AppLog.e(TAG, "The reading log could not be read. $seconds seconds were not added.", problem)
-            return
+        // Every change here reads the whole log, appends a line, and writes it
+        // back, and each pause runs on a thread of its own. Two readers
+        // pausing at once could both read the old log, and the second write
+        // would wipe the first line. So the changes take turns. One lock for
+        // every copy of this class, because each reader makes its own.
+        synchronized(LOCK) {
+            val path = StorageLayout.readingLogPath()
+            val old = try {
+                data.store.readTextOrThrow(path)
+            } catch (problem: IOException) {
+                // Writing now would start the log again and lose every day in it.
+                AppLog.e(TAG, "The reading log could not be read. $seconds seconds were not added.", problem)
+                return
+            }
+            val before = old?.trimEnd().orEmpty().ifEmpty { ReadingLog.HEADER }
+            val after = before + "\n" + ReadingLog.line(ReadingLog.Entry(date, bookId, seconds)) + "\n"
+            if (!data.store.writeText(path, after)) AppLog.w(TAG, "Could not write the reading log")
         }
-        val before = old?.trimEnd().orEmpty().ifEmpty { ReadingLog.HEADER }
-        val after = before + "\n" + ReadingLog.line(ReadingLog.Entry(date, bookId, seconds)) + "\n"
-        if (!data.store.writeText(path, after)) AppLog.w(TAG, "Could not write the reading log")
     }
 
     fun secondsReadOn(date: LocalDate): Long =
         ReadingLog.secondsOn(ReadingLog.parse(data.store.readText(StorageLayout.readingLogPath()).orEmpty()), date)
+
+    private companion object {
+        val LOCK = Any()
+    }
 }

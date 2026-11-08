@@ -29,7 +29,8 @@ class InkNotesRepository(private val data: DataRepository) {
         if (!data.store.exists(path)) return InkNoteLoad.Missing
         val bytes = data.store.readBytes(path)
             ?: return InkNoteLoad.Damaged("The file could not be read")
-        if (bytes.isEmpty()) return InkNoteLoad.Missing
+        // A file of no bytes is what a power cut can leave. Never call it new.
+        if (bytes.isEmpty()) return InkNoteLoad.Damaged("The file is empty")
         return try {
             InkNoteLoad.Loaded(InkNoteCodec.decode(bytes))
         } catch (problem: StrokesFormatException) {

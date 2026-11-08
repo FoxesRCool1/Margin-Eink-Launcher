@@ -78,4 +78,29 @@ class TextSearchTest {
         val docs = listOf(doc(SearchKind.Note, "Pond", "# Pond\nThe water stood still."))
         assertEquals("Pond The water stood still.", search(docs, "water").single().snippet)
     }
+
+    @Test
+    fun `a snippet that starts with the title has the title removed`() {
+        assertEquals("the pond is quiet", withoutTitle("Walden: the pond is quiet", "Walden"))
+        assertEquals("the pond is quiet", withoutTitle("Walden - the pond is quiet", "Walden"))
+        assertEquals("the pond is quiet", withoutTitle("Walden.the pond is quiet", "Walden"))
+        assertEquals("the pond is quiet", withoutTitle("Walden the pond is quiet", "Walden"))
+    }
+
+    @Test
+    fun `a snippet that does not start with the title is left alone`() {
+        assertEquals("the pond is quiet", withoutTitle("the pond is quiet", "Walden"))
+    }
+
+    @Test
+    fun `a snippet that is only the title becomes empty`() {
+        assertEquals("", withoutTitle("Walden", "Walden"))
+        assertEquals("", withoutTitle("Walden:", "Walden"))
+    }
+
+    @Test
+    fun `the title match ignores case`() {
+        assertEquals("the pond is quiet", withoutTitle("walden: the pond is quiet", "Walden"))
+        assertEquals("the pond is quiet", withoutTitle("WALDEN the pond is quiet", "walden"))
+    }
 }

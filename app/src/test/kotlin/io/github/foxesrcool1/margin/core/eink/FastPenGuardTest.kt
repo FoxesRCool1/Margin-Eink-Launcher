@@ -14,6 +14,11 @@ class FastPenGuardTest {
 
     private fun guard() = FastPenGuard(temp.root.resolve("eink"))
 
+    private fun crash(path: FastPenPath) = repeat(2) {
+        guard().markTrying(path)
+        guard().settleAfterStart()
+    }
+
     @Test
     fun aPathNobodyTriedMayBeTried() {
         assertEquals(FastPenGuard.State.Untried, guard().state(FastPenPath.Writing))
@@ -30,33 +35,45 @@ class FastPenGuardTest {
     }
 
     @Test
-    fun aCallThatNeverCameBackIsACrash() {
+    fun aCallThatNeverCameBackTwiceIsACrash() {
         guard().markTrying(FastPenPath.Writing)
         // The process died here. A new process starts and settles.
-        val crashed = guard().settleAfterStart()
-        assertEquals(listOf(FastPenPath.Writing), crashed)
+        assertEquals(emptyList<FastPenPath>(), guard().settleAfterStart())
+        assertTrue(guard().mayTry(FastPenPath.Writing))
+        // It tries again and dies again.
+        guard().markTrying(FastPenPath.Writing)
+        assertEquals(listOf(FastPenPath.Writing), guard().settleAfterStart())
         assertFalse(guard().mayTry(FastPenPath.Writing))
     }
 
     @Test
-    fun oneCrashedPathDoesNotBlockTheOther() {
+    fun oneUnrelatedDeathDoesNotBanThePath() {
         guard().markTrying(FastPenPath.Writing)
         guard().settleAfterStart()
+        // The next try came back, so the doubt is gone.
+        guard().markTrying(FastPenPath.Writing)
+        guard().markFine(FastPenPath.Writing)
+        guard().markTrying(FastPenPath.Writing)
+        assertEquals(emptyList<FastPenPath>(), guard().settleAfterStart())
+        assertTrue(guard().mayTry(FastPenPath.Writing))
+    }
+
+    @Test
+    fun oneCrashedPathDoesNotBlockTheOther() {
+        crash(FastPenPath.Writing)
         assertTrue(guard().mayTry(FastPenPath.AutoDraw))
     }
 
     @Test
     fun aCrashStaysACrashAcrossStarts() {
-        guard().markTrying(FastPenPath.AutoDraw)
-        guard().settleAfterStart()
+        crash(FastPenPath.AutoDraw)
         assertEquals(emptyList<FastPenPath>(), guard().settleAfterStart())
         assertFalse(guard().mayTry(FastPenPath.AutoDraw))
     }
 
     @Test
     fun resetAllowsAnotherTry() {
-        guard().markTrying(FastPenPath.Writing)
-        guard().settleAfterStart()
+        crash(FastPenPath.Writing)
         guard().reset(FastPenPath.Writing)
         assertTrue(guard().mayTry(FastPenPath.Writing))
     }

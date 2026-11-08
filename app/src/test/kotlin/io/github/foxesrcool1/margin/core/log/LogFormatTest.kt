@@ -50,6 +50,18 @@ class LogFormatTest {
     }
 
     @Test
+    fun `only the newest five crash files are kept`() {
+        val names = (1..8).map { "crash-2026-11-0$it-170000000000$it.txt" }
+        assertEquals(names.take(3), LogFormat.crashFilesToDelete(names))
+    }
+
+    @Test
+    fun `three crash files are all kept`() {
+        val names = (1..3).map { "crash-2026-11-0$it-170000000000$it.txt" }
+        assertEquals(emptyList<String>(), LogFormat.crashFilesToDelete(names))
+    }
+
+    @Test
     fun `a log line keeps its level tag and message`() {
         val line = LogLine(millisOf("2026-09-19T08:04:05"), LogLevel.WARN, "Ink", "pen lost")
         assertEquals("2026-09-19 08:04:05.000 W Ink: pen lost", line.format())

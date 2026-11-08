@@ -67,6 +67,23 @@ fun search(docs: List<SearchDoc>, query: String, limit: Int = 200): List<SearchH
 }
 
 /**
+ * A snippet that starts with the title, after trimming and ignoring case, has
+ * the title and the separator characters right after it (spaces, newlines,
+ * '.', '-', ':') removed, so the row does not show the same words twice.
+ * When nothing is left, the empty string is returned and the row shows only
+ * the title.
+ */
+fun withoutTitle(snippet: String, title: String): String {
+    val trimmedSnippet = snippet.trim()
+    val trimmedTitle = title.trim()
+    if (trimmedTitle.isEmpty()) return trimmedSnippet
+    if (!trimmedSnippet.lowercase().startsWith(trimmedTitle.lowercase())) return trimmedSnippet
+    val rest = trimmedSnippet.substring(trimmedTitle.length)
+    val cleaned = rest.trimStart(' ', '\n', '\r', '.', '-', ':')
+    return cleaned
+}
+
+/**
  * About [SNIPPET_WIDTH] characters of the text around the first match of the
  * first word, on one line. Newlines become spaces, and a "..." marks where the
  * line was cut. When the match is in the title only, the start of the text is

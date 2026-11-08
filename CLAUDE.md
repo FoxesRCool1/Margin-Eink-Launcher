@@ -14,7 +14,7 @@ Read this file at the start of every session. It is the short form of
 5. Do not trust library versions from memory. Check the current stable version
    on the web before you add or raise a dependency. Ask the owner before you
    add a dependency that is not in `plan.md`.
-6. Check the licence of every dependency and every asset. No GPL. No AGPL.
+6. Check the licence of every dependency and every asset. No GPL. No AGPL. (desugar_jdk_libs is GPL-2.0 with Classpath Exception, allowed)
    Record every asset in `ASSETS.md`.
 7. You cannot see the tablet. `adb shell`, `adb install` and logcat do not work
    on this device. Use unit tests, screenshot tests and the in-app log. End
@@ -139,8 +139,9 @@ https://ko-fi.com/foxesrcool. That link lives in three places: the README,
 ## Network rules
 
 - The app goes online in one place, `core/update/`, and only when the user
-  presses "Check for updates". Do not add a second place, a background check
-  or a check at start-up. See `docs/decisions/0012-in-app-updates.md`.
+  opens Settings, About, Updates (it checks when it opens; the refresh icon
+  checks again). Do not add a second place, a background check or a check at
+  start-up. See `docs/decisions/0012-in-app-updates.md`.
 - Release builds talk https only. Plain http is for the debug LAN update.
 - A web view that shows book content has its network loads blocked.
 - The version lives in one line, `appVersionName` in `app/build.gradle.kts`.
@@ -172,7 +173,7 @@ app/src/main/kotlin/io/github/foxesrcool1/margin/
   design/icons/  the Lucide icons, written by tools/lucide.py
   design/components/  the design system
   ui/            screens
-app/src/debug/   the dev panel, internet permission, file provider
+app/src/debug/   the dev panel and usesCleartextTraffic (the internet permission and the file provider are in the main manifest)
 app/src/release/ stubs for the debug only parts
 app/src/test/    unit tests and Roborazzi screenshot tests
 ```
@@ -187,7 +188,7 @@ finished, and which traps have already cost a day.
 ```
 ./gradlew assembleViwoodsDebug          build the tablet APK
 ./gradlew testViwoodsDebugUnitTest      unit tests
-./gradlew recordRoborazziViwoodsDebug   write the screenshots
+./gradlew testViwoodsDebugUnitTest      also writes the screenshots to app/build/outputs/roborazzi
 tools/deploy.sh viwoods 8000            build and serve the APK on the LAN
 tools/release.sh 0.1.1 "what changed"   tag a release. GitHub builds it, the app finds it
 tools/emulator.sh                       run the app in an emulator on the dev machine

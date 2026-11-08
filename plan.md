@@ -14,7 +14,7 @@ Read this section at the start of each session.
 
 1. Do one step per session. Stop at the end of the step. Do not start the next step.
 2. Each step has a model tag: `Model: Opus` or `Model: Fable`. The owner sets the model before the step starts. If Opus fails the same task two times, tell the owner to switch to Fable for that task. If Fable declines a part of Step 2, tell the owner to run that part with Opus.
-3. Work on a branch named `step-NN-short-name`. Open a pull request at the end of the step.
+3. The repository has two branches, `main` and `Dev`. Work on `Dev`. Never create a new branch.
 4. Keep `PROGRESS.md` current. Write what you did, what works, what does not work, and what the owner must test on the device.
 5. Keep `docs/decisions/` current. Write one short file per important decision.
 6. Do not trust library versions from memory. Check the current stable version on the web before you add a dependency. Ask the owner before you add a dependency that is not in this plan.
@@ -104,8 +104,8 @@ Source: the public repo `jdkruzr/ViwoodsAppDev` (README and `VIWOODS_APP_DEV.md`
 | Device layer | Interface `EinkDevice` (refresh modes, full refresh, fast pen on/off, pen tool, pen width). Implementations: `ViwoodsEinkDevice` (reflection, fully guarded with try/catch) and `GenericEinkDevice` (no-op). This keeps the app useful on Boox and other tablets later. |
 | EPUB | Readium Kotlin Toolkit 3.x (BSD-3). Paginated mode. Page turns with `animated = false`. Highlights through its Decorator API. |
 | PDF | Own paged view. Render one page to a bitmap with PdfiumAndroid (through the Readium PDFium adapter or direct) or with the platform `PdfRenderer`. Choose in Step 8. Do not use MuPDF (AGPL). |
-| Ink | `androidx.ink` for strokes, geometry and storage. Own page model on top. |
-| Data | Plain files are the source of truth, in one user-visible folder. Room holds only an index that the app can rebuild. If Storage Access Framework is too slow in Step 4, fall back to app-private files plus an export and backup command. |
+| Ink | `androidx.ink` for strokes, geometry and storage. Own page model on top. Note: Jetpack Ink is used only in the debug build (`debugImplementation` in `app/build.gradle.kts`). |
+| Data | Plain files are the source of truth, in one user-visible folder. Note: Room is not used; the app keeps plain files plus an in-memory index that it can rebuild from the folder. If Storage Access Framework is too slow in Step 4, fall back to app-private files plus an export and backup command. |
 | DI | Keep it simple. Manual DI or Koin. No Hilt unless needed. |
 | Tests | JUnit for logic. Roborazzi (Robolectric) screenshot tests at 1440 x 1920 in greyscale, so Claude Code can look at the PNG output. |
 | CI | GitHub Actions: build both flavours, unit tests, screenshot tests, lint. |
@@ -203,7 +203,6 @@ Settings
 ### Later (not in version 1)
 
 - Handwriting to text (ML Kit Digital Ink, works offline after the model download).
-- Full text search in notes and highlights.
 - Text selection highlights in PDF.
 - Lasso select and move in the ink editor.
 - Focus mode: hide the Apps tab for a set time. A three position connection control like the Prose slider. Note: an app on Android 10+ cannot switch Wi-Fi itself. It can only open the system panel.

@@ -108,4 +108,18 @@ class HabitsFileTest {
         )
         assertEquals(awkward, HabitsFile.parse(HabitsFile.serialise(awkward)))
     }
+
+    @Test
+    fun `the number of habits left out is counted`() {
+        val text = """
+            {"version": 1, "habits": [
+              {"id": "good", "name": "Good", "createdOn": "2026-01-01"},
+              {"id": "bad", "name": "Bad", "createdOn": "yesterday"}
+            ]}
+        """.trimIndent()
+
+        val (parsed, dropped) = HabitsFile.parseCounting(text)!!
+        assertEquals(listOf("good"), parsed.habits.map { it.id })
+        assertEquals(1, dropped)
+    }
 }

@@ -42,7 +42,10 @@ object HabitsFile {
      * is dropped rather than losing every other one, because the alternative
      * is a user who loses a year of tracking to one stray comma.
      */
-    fun parse(text: String): HabitsDocument? {
+    fun parse(text: String): HabitsDocument? = parseCounting(text)?.first
+
+    /** Like [parse], and also says how many entries were left out. */
+    fun parseCounting(text: String): Pair<HabitsDocument, Int>? {
         val root = Json.parseOrNull(text) as? JsonObject ?: return null
         if (root.int("version") == null) return null
 
@@ -50,7 +53,8 @@ object HabitsFile {
             ?.takeIf { it in 0..23 }
             ?: DayBoundary.DEFAULT_HOUR
 
-        val habits = (root["habits"] as? JsonArray)
+        val entries = root["habits"] as? JsonArray
+        val habits = entries
             ?.objects()
             ?.mapNotNull { entry ->
                 val id = entry.string("id")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -69,7 +73,8 @@ object HabitsFile {
             ?.distinctBy { it.id }
             ?: emptyList()
 
-        return HabitsDocument(habits, hour)
+        val dropped = (entries?.size ?: 0) - habits.size
+        return HabitsDocument(habits, hour) to dropped
     }
 
     /** Turns a name into an id that is stable and safe in a file name. */

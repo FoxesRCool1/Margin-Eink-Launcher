@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,5 +75,22 @@ class AppsRepositoryTest {
 
         assertTrue(apps.any { it.packageName == "com.example.reader" })
         assertTrue(apps.none { it.packageName == context.packageName })
+    }
+
+    @Test
+    fun `labels sort A to Z with accents ignored, so Zoom comes last`() {
+        val entries = listOf("Zoom", "etudes", "Éditeur").map {
+            LauncherEntry(packageName = "com.example.sort", className = it, label = it)
+        }
+
+        assertEquals(listOf("Éditeur", "etudes", "Zoom"), sortByLabel(entries).map { it.label })
+    }
+
+    @Test
+    fun `an unknown package is uninstalled, and this app is not`() {
+        val pm = context.packageManager
+
+        assertTrue(isUninstalled(pm, "com.example.not.installed"))
+        assertFalse(isUninstalled(pm, context.packageName))
     }
 }

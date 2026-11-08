@@ -14,9 +14,19 @@ import io.github.foxesrcool1.margin.core.log.AppLog
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import java.util.Locale
+import java.text.Collator
 
 private const val TAG = "AppsRepository"
+
+/** Sorts A to Z by label, so accented letters sit with their plain ones. */
+internal fun sortByLabel(entries: List<LauncherEntry>): List<LauncherEntry> {
+    val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
+    return entries.sortedWith(compareBy(collator) { it.label })
+}
+
+/** True only when the system confirms the package is not installed. */
+internal fun isUninstalled(pm: PackageManager, pkg: String): Boolean =
+    runCatching { pm.getPackageInfo(pkg, 0) }.exceptionOrNull() is PackageManager.NameNotFoundException
 
 /**
  * The list of apps on the tablet.
@@ -70,7 +80,7 @@ class AppsRepository(context: Context) {
             .filter { it.packageName != appContext.packageName }
 
         AppLog.i(TAG, "Loaded ${entries.size} apps")
-        return entries.sortedBy { it.label.lowercase(Locale.ROOT) }
+        return sortByLabel(entries)
     }
 
     private fun loadFromPackageManager(): List<LauncherEntry> = runCatching {

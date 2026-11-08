@@ -2,6 +2,7 @@ package io.github.foxesrcool1.margin.core.habits
 
 import io.github.foxesrcool1.margin.core.storage.UnreadableStore
 import io.github.foxesrcool1.margin.core.storage.DataRepository
+import io.github.foxesrcool1.margin.core.storage.FileStore
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import org.junit.Assert.assertEquals
@@ -11,6 +12,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.InputStream
 import java.time.LocalDate
 
 class HabitsRepositoryTest {
@@ -214,4 +216,57 @@ class HabitsRepositoryTest {
 
         assertEquals(before, store.readText(StorageLayout.habitsPath()))
     }
+
+    @Test
+    fun `a habit with a bad date is kept in a copy before the next save`() {
+        val text = """
+            {"version": 1, "habits": [
+              {"id": "good", "name": "Good", "createdOn": "2026-01-01"},
+              {"id": "bad", "name": "Bad", "createdOn": "yesterday"}
+            ]}
+        """.trimIndent()
+        store.writeText(StorageLayout.habitsPath(), text)
+
+        habits.add("Walk", today)
+
+        assertEquals(text, store.readText("habits/habits.unreadable.json"))
+        assertEquals(listOf("good", "walk"), habits.load().habits.map { it.id })
+    }
+
+    @Test
+    fun `a log line that cannot be read is kept in a copy before the next save`() {
+        val text = "date,habit\n2026/11/8,run\n2026-09-19,read\n"
+        store.writeText(StorageLayout.habitLogPath(), text)
+
+        habits.toggle("read", today.minusDays(1))
+
+        assertEquals(text, store.readText("habits/log.unreadable.csv"))
+        assertEquals(setOf(today, today.minusDays(1)), habits.datesFor("read"))
+    }
+
+    @Test
+    fun `a failed toggle gives back the old state and does not claim a change`() {
+        habits.add("Read", today)
+        habits.toggle("read", today)
+        val failing = HabitsRepository(DataRepository(FailingWrites(store)))
+
+        assertTrue(failing.toggle("read", today))
+        assertEquals(setOf(today), habits.datesFor("read"))
+    }
+
+    @Test
+    fun `a failed add gives back the list without the new habit`() {
+        habits.add("Read", today)
+        val failing = HabitsRepository(DataRepository(FailingWrites(store)))
+
+        assertEquals(listOf("read"), failing.add("Walk", today).habits.map { it.id })
+        assertEquals(listOf("read"), habits.load().habits.map { it.id })
+    }
+}
+
+/** A store that reads as usual but refuses every write. */
+private class FailingWrites(private val inner: FileStore) : FileStore by inner {
+    override fun write(relativePath: String, bytes: ByteArray): Boolean = false
+    override fun writeText(relativePath: String, text: String): Boolean = false
+    override fun writeFrom(relativePath: String, input: InputStream): Boolean = false
 }

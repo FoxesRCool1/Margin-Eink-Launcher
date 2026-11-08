@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ fun TextPromptDialog(
     allowEmpty: Boolean = false,
     /** The starting text is selected, so typing replaces it. See [EinkTextField]. */
     selectAllOnOpen: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -65,6 +67,7 @@ fun TextPromptDialog(
                 textStyle = EinkType.body,
                 singleLine = true,
                 selectAllOnOpen = selectAllOnOpen,
+                keyboardOptions = keyboardOptions,
                 // Enter is the same as the confirm button, for a keyboard user.
                 onSubmit = { if (canConfirm) onConfirm(value.trim()) },
                 modifier = Modifier

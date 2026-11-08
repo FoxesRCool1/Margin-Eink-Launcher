@@ -17,11 +17,14 @@ class SearchState {
     // The results stay hidden until the first search, so the screen does not
     // open with "Nothing found" on it.
     var searched by mutableStateOf(false)
+    // Shown in place of the results when a search failed to run.
+    var status by mutableStateOf<String?>(null)
 
     /** Back to an empty search, for the next time Search opens from Home. */
     fun clear() {
         query = ""
         hits = emptyList()
         searched = false
+        status = null
     }
 }

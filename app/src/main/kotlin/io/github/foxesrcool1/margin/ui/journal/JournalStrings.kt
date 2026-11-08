@@ -12,8 +12,12 @@ object JournalStrings {
     private val DAY = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.ENGLISH)
     private val SHORT_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
     private val MONTH = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)
+    private val SHORT_MONTH = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH)
 
     fun dayTitle(date: LocalDate): String = DAY.format(date)
+
+    /** "Sep 2026": the month in half of a split screen, where the long one breaks mid-word. */
+    fun shortMonthTitle(date: LocalDate): String = SHORT_MONTH.format(date)
 
     /** "19 Sep": the day in half of a split screen, where the long one ends in three dots. */
     fun shortDayTitle(date: LocalDate): String = SHORT_DAY.format(date)

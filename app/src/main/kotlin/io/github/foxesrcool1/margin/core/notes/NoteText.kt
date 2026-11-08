@@ -27,8 +27,9 @@ object NoteText {
     /**
      * A title for a note.
      *
-     * The first Markdown heading wins. Failing that, the first line with
-     * something on it. Failing that, the file name.
+     * The first line with something on it, whether or not it is a heading.
+     * Leading # marks are removed from it when text follows them. Failing
+     * that, the file name.
      */
     fun titleFrom(text: String, fallback: String): String {
         text.lineSequence().forEach { rawLine ->

@@ -92,6 +92,12 @@ class InkCanvasView(context: Context) : View(context) {
 
     /** The stylus changed between tip and eraser end, or the mode changed. For the fast pen tool type. */
     var onErasingChanged: ((erasing: Boolean) -> Unit)? = null
+        set(value) {
+            field = value
+            // A new listener is a new fast pen session, which starts on the pen
+            // tool. The next pen-down has to say which tool this canvas is in.
+            lastReportedErasing = null
+        }
 
     /** Called when the view gets a size, so a new note can take the shape of the screen it is made on. */
     var onSized: ((width: Int, height: Int) -> Unit)? = null
@@ -122,6 +128,9 @@ class InkCanvasView(context: Context) : View(context) {
     private var offsetY = 0f
 
     private var builder: InkStrokeBuilder? = null
+
+    /** The id of the pointer that is writing, or -1. Not the index: that changes when another pointer lifts. */
+    private var penPointerId = -1
     private var erasingNow = false
     private var lastReportedErasing: Boolean? = null
     private var lastPageX = 0f
@@ -187,13 +196,6 @@ class InkCanvasView(context: Context) : View(context) {
         rebuildAll()
     }
 
-    /** Swaps the picture under the ink and keeps the ink and its undo history. */
-    fun setBackdrop(backdrop: Bitmap?) {
-        this.backdrop = backdrop
-        this.backdropBox = null
-        rebuildAll()
-    }
-
     fun undo() = afterHistoryChange(editor.undo())
 
     fun redo() = afterHistoryChange(editor.redo())
@@ -207,10 +209,6 @@ class InkCanvasView(context: Context) : View(context) {
         rebuildAround(changed)
         onInkChanged?.invoke()
     }
-
-    /** The page box in view pixels, for a host that places things around it. */
-    fun pageBoxInView(): RectF =
-        RectF(offsetX, offsetY, offsetX + pageWidth * scale, offsetY + pageHeight * scale)
 
     // -- Layout ---------------------------------------------------------------
 
@@ -326,11 +324,23 @@ class InkCanvasView(context: Context) : View(context) {
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(event: MotionEvent): Boolean =
-        if (isStylus(event)) onPenEvent(event) else onFingerEvent(event)
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // A stroke belongs to the pointer that started it, whatever else
+        // lands or lifts: a resting palm must not take the stroke over.
+        if (penPointerId >= 0) return onPenEvent(event)
+        val action = event.actionMasked
+        if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) &&
+            isStylus(event, event.actionIndex)
+        ) {
+            penPointerId = event.getPointerId(event.actionIndex)
+            fingerIsSwipe = false
+            return onPenEvent(event)
+        }
+        return onFingerEvent(event)
+    }
 
-    private fun isStylus(event: MotionEvent): Boolean {
-        val tool = event.getToolType(0)
+    private fun isStylus(event: MotionEvent, index: Int = 0): Boolean {
+        val tool = event.getToolType(index)
         return tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER ||
             // The emulator on the dev machine has a mouse and no pen. See DevEnvironment.
             fingerDraws
@@ -341,8 +351,19 @@ class InkCanvasView(context: Context) : View(context) {
 
     private fun onPenEvent(event: MotionEvent): Boolean {
         lastPenMillis = SystemClock.uptimeMillis()
+        val pen = event.findPointerIndex(penPointerId)
+        if (pen < 0) {
+            // The pen pointer is not in this event. Nothing it could do now is a stroke.
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                finishStroke()
+                penPointerId = -1
+            }
+            return true
+        }
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                // A second pointer landing while the pen writes is a hand.
+                if (event.actionIndex != pen) return true
                 // The system batches touch events to the frame rate. A pen
                 // wants every point as soon as it exists.
                 requestUnbufferedDispatch(event)
@@ -350,15 +371,15 @@ class InkCanvasView(context: Context) : View(context) {
                 timer.removeCallbacks(payOwed)
 
                 erasingNow = mode == InkMode.Eraser ||
-                    event.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER ||
+                    event.getToolType(pen) == MotionEvent.TOOL_TYPE_ERASER ||
                     (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0
                 if (lastReportedErasing != erasingNow) {
                     lastReportedErasing = erasingNow
                     onErasingChanged?.invoke(erasingNow)
                 }
 
-                lastPageX = toPageX(event.x)
-                lastPageY = toPageY(event.y)
+                lastPageX = toPageX(event.getX(pen))
+                lastPageY = toPageY(event.getY(pen))
                 if (erasingNow) {
                     builder = null
                     eraseAlong(lastPageX, lastPageY, lastPageX, lastPageY)
@@ -366,23 +387,32 @@ class InkCanvasView(context: Context) : View(context) {
                     val tool = if (mode == InkMode.Highlighter) InkTool.Highlighter else InkTool.Pen
                     val width = (if (tool == InkTool.Highlighter) highlighterWidth else penWidth) * unitScale
                     builder = InkStrokeBuilder(tool, width).also {
-                        it.add(lastPageX, lastPageY, event.pressure)
+                        it.add(lastPageX, lastPageY, event.getPressure(pen))
                     }
-                    if (!deviceDrawsLive) invalidate()
+                    if (!deviceDrawsLive) invalidateLive(builder!!, 0)
                 }
             }
 
             MotionEvent.ACTION_MOVE -> {
+                val before = builder?.size ?: 0
                 for (index in 0 until event.historySize) {
-                    penMovedTo(event.getHistoricalX(index), event.getHistoricalY(index), event.getHistoricalPressure(index))
+                    penMovedTo(
+                        event.getHistoricalX(pen, index),
+                        event.getHistoricalY(pen, index),
+                        event.getHistoricalPressure(pen, index),
+                    )
                 }
-                penMovedTo(event.x, event.y, event.pressure)
-                if (builder != null && !deviceDrawsLive) invalidate()
+                penMovedTo(event.getX(pen), event.getY(pen), event.getPressure(pen))
+                builder?.let { if (!deviceDrawsLive) invalidateLive(it, before) }
             }
 
-            MotionEvent.ACTION_UP -> {
-                penMovedTo(event.x, event.y, event.pressure)
-                finishStroke()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                // Only the pen lifting ends the stroke. A palm lifting does not.
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionIndex == pen) {
+                    penMovedTo(event.getX(pen), event.getY(pen), event.getPressure(pen))
+                    finishStroke()
+                    endPenGesture()
+                }
             }
 
             MotionEvent.ACTION_CANCEL -> {
@@ -391,10 +421,47 @@ class InkCanvasView(context: Context) : View(context) {
                 val abandoned = builder
                 builder = null
                 if (abandoned != null && !deviceDrawsLive) invalidate()
-                if (deviceDrawsLive) schedulePayOwed()
+                if (deviceDrawsLive) {
+                    // The tablet may have left its line on the glass. Repaint the place.
+                    abandoned?.build()?.let { forgetOwed(listOf(it)) }
+                    schedulePayOwed()
+                }
+                endPenGesture()
             }
         }
         return true
+    }
+
+    /** The pen is done. A hand that is still down must not turn this into a swipe. */
+    private fun endPenGesture() {
+        penPointerId = -1
+        fingerIsSwipe = false
+    }
+
+    /**
+     * Asks for a repaint of what the open stroke changed since point [from],
+     * and nothing else. A new point reshapes the pieces of the two before it.
+     * E-ink rule 7.
+     */
+    private fun invalidateLive(live: InkStrokeBuilder, from: Int) {
+        if (live.size == 0) return
+        var left = Float.MAX_VALUE
+        var top = Float.MAX_VALUE
+        var right = -Float.MAX_VALUE
+        var bottom = -Float.MAX_VALUE
+        for (index in max(0, from - 2) until live.size) {
+            left = min(left, live.xs[index])
+            right = max(right, live.xs[index])
+            top = min(top, live.ys[index])
+            bottom = max(bottom, live.ys[index])
+        }
+        val reach = live.width * scale / 2f + 3f
+        invalidate(
+            floor(left * scale + offsetX - reach).toInt(),
+            floor(top * scale + offsetY - reach).toInt(),
+            ceil(right * scale + offsetX + reach).toInt(),
+            ceil(bottom * scale + offsetY + reach).toInt(),
+        )
     }
 
     private fun penMovedTo(viewX: Float, viewY: Float, pressure: Float) {
@@ -514,7 +581,7 @@ class InkCanvasView(context: Context) : View(context) {
                 fingerDownY = event.y
             }
 
-            MotionEvent.ACTION_POINTER_DOWN -> fingerIsSwipe = false
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> fingerIsSwipe = false
 
             MotionEvent.ACTION_UP -> {
                 if (!fingerIsSwipe) return true

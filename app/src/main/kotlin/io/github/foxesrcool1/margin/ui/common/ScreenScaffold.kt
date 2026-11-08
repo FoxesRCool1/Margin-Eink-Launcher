@@ -19,6 +19,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.TextAutoSize
@@ -129,11 +131,13 @@ fun ScreenScaffold(
                         EinkText(
                             text = shownTitle,
                             style = titleStyle,
-                            maxLines = 1,
+                            maxLines = 2,
+                            modifier = Modifier.semantics { heading() },
                             // The top line holds more controls than it did,
-                            // and half a screen has less room again. The type
-                            // gets smaller before the title gets dots. A title
-                            // that fits keeps its full size.
+                            // and half a screen has less room again. The title
+                            // wraps to a second line first, and only then does
+                            // the type get smaller. A title that fits keeps its
+                            // full size.
                             autoSize = TextAutoSize.StepBased(
                                 minFontSize = 16.sp,
                                 maxFontSize = titleStyle.fontSize,
@@ -143,7 +147,7 @@ fun ScreenScaffold(
                     }
                     if (wide && actions != null) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
                             verticalAlignment = Alignment.CenterVertically,
                             content = actions,
                         )
@@ -156,6 +160,7 @@ fun ScreenScaffold(
                         inPane -> PaneControls()
                         showRotate -> {
                             SplitButton()
+                            Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                             RotateButton()
                         }
                     }
@@ -186,8 +191,9 @@ private const val LONG_TITLE = 12
 
 /**
  * Turns the screen on its side, and back. Every screen has one at the top.
- * The owner asked for it to be small and easy to overlook, so it is grey, and
- * smaller than the other icons. The target is still 56 dp.
+ * The owner asked for it to be small and easy to overlook, so it has no border
+ * and is drawn black at its size, smaller than the other icons. The target is
+ * still 56 dp.
  */
 @Composable
 fun RotateButton(modifier: Modifier = Modifier) {

@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
@@ -16,6 +19,7 @@ import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
 import io.github.foxesrcool1.margin.design.components.EinkIcon
 import io.github.foxesrcool1.margin.design.components.EinkRow
+import io.github.foxesrcool1.margin.design.components.EinkSeparator
 import io.github.foxesrcool1.margin.design.components.EinkText
 import io.github.foxesrcool1.margin.design.components.HairlineDivider
 import io.github.foxesrcool1.margin.design.components.IconPressButton
@@ -49,6 +53,8 @@ fun RoutineRow(
     EinkRow(onClick = if (enabled) onToggle else ({}), onLongClick = onOptions, modifier = modifier) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else if (enabled) EinkColors.Ink else EinkColors.Faded
         val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
+        // Small text is always black; grey is for large inactive text only.
+        val small = if (pressed) EinkColors.Paper else EinkColors.Ink
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -56,6 +62,9 @@ fun RoutineRow(
         ) {
             EinkIcon(
                 icon = if (status.doneToday) Lucide.CircleCheck else Lucide.Circle,
+                modifier = Modifier.semantics {
+                    stateDescription = if (status.doneToday) "Done" else "Not done"
+                },
                 size = 22.dp,
                 color = foreground,
             )
@@ -89,12 +98,17 @@ fun RoutineRow(
         // Any Time says nothing. The other parts of the day show by name.
         val details = listOfNotNull(
             status.item.part.takeIf { it != PartOfDay.AnyTime }?.title,
-            status.item.target.takeIf { it.isNotBlank() }?.let { "Opens $it" },
+            status.item.targetLabel?.let { label ->
+                if (status.item.opensAnApp) "Opens an app" else "Opens $label"
+            },
         )
         if (details.isNotEmpty()) {
             CapsLabel(
-                text = details.joinToString("  .  "),
-                style = EinkType.capsSmall.copy(color = faded),
+                text = details.joinToString(EinkSeparator),
+                modifier = Modifier.semantics {
+                    contentDescription = details.joinToString(", ")
+                },
+                style = EinkType.capsSmall.copy(color = small),
                 maxLines = 1,
             )
         }

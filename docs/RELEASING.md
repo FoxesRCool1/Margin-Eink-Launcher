@@ -21,7 +21,7 @@ It does five things:
 5. Pushes the branch and the tag.
 
 Then watch the "Release" workflow. It takes about 15 minutes. When it is
-done, press "Check for updates" on the tablet.
+done, the app on the tablet finds it: Settings, About, Updates checks when it opens; the refresh icon checks again.
 
 The script refuses to run with changes that are not committed, with a version
 lower than the current one, and with a tag that exists already. The workflow

@@ -38,6 +38,8 @@ data class BookAnnotations(
     /** 0 to 1, for the library list. */
     val progress: Double = 0.0,
     val highlights: List<Highlight> = emptyList(),
+    /** When the reader last saved, in epoch millis. 0 means unknown, for files written before the stamp. */
+    val lastOpened: Long = 0L,
 ) {
     fun withHighlight(highlight: Highlight): BookAnnotations =
         copy(highlights = (highlights.filterNot { it.id == highlight.id } + highlight).sortedBy { it.progression })
@@ -66,6 +68,7 @@ object AnnotationsFile {
             "progress" to JsonNumber(annotations.progress),
         )
         annotations.position?.let { entries["position"] = it }
+        if (annotations.lastOpened > 0L) entries["lastOpened"] = JsonNumber(annotations.lastOpened.toDouble())
         entries["highlights"] = jsonArrayOf(
             annotations.highlights.map { highlight ->
                 JsonObject.of(
@@ -114,6 +117,7 @@ object AnnotationsFile {
             position = root.obj("position"),
             progress = root.number("progress")?.coerceIn(0.0, 1.0) ?: 0.0,
             highlights = highlights,
+            lastOpened = root.long("lastOpened")?.takeIf { it > 0L } ?: 0L,
         )
     }
 

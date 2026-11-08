@@ -29,6 +29,7 @@ import io.github.foxesrcool1.margin.core.notes.NoteEntry
 import io.github.foxesrcool1.margin.core.notes.NotesRepository
 import io.github.foxesrcool1.margin.core.notes.timestampedNoteName
 import io.github.foxesrcool1.margin.core.storage.DataRoot
+import io.github.foxesrcool1.margin.core.storage.RelativePaths
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkColors
@@ -212,6 +213,12 @@ fun WritingScreen(
                                 val moved = withContext(AppDispatchers.io) {
                                     notes.move(pending.path, folder)
                                 }
+                                if (moved) {
+                                    // The note keeps its file name in the new folder.
+                                    val from = RelativePaths.normalise(pending.path)
+                                    val to = RelativePaths.join(RelativePaths.normalise(folder), RelativePaths.nameOf(from))
+                                    if (to != from && split?.noteMoved(from, to) == true) context.findActivity()?.finish()
+                                }
                                 status = if (moved) {
                                     "Moved ${pending.name}"
                                 } else {
@@ -376,6 +383,12 @@ fun WritingScreen(
                         status = null
                     }
                     if (renamed == null) status = "Could not rename it"
+                    // A note open in the other half follows its new name. The main half closes if it shows the old one.
+                    if (renamed != null && renamed != beingRenamed.path &&
+                        split?.noteMoved(beingRenamed.path, renamed) == true
+                    ) {
+                        context.findActivity()?.finish()
+                    }
                     refresh++
                 }
             },

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -103,6 +104,61 @@ class UpdateManagerTest {
         assertTrue(state.handedOver)
         assertEquals("The install was cancelled.", state.note)
         assertTrue(file.exists())
+    }
+
+    @Test
+    fun `a second install while the first is handed over does nothing`() {
+        val file = File(UpdateManager.downloadFolder(context).apply { mkdirs() }, "margin-v99.0.0-viwoods-debug.apk")
+            .apply { writeText("x") }
+        val release = ReleaseInfo("v99.0.0", AppVersion(99, 0, 0), "t", "", false, emptyList())
+        UpdateManager.force(UpdateState.Ready(release, file, handedOver = true, note = UpdateManager.INSTALLING_NOTE))
+
+        UpdateManager.install(context)
+
+        val state = UpdateManager.state.value as UpdateState.Ready
+        assertTrue(state.handedOver)
+        assertEquals(UpdateManager.INSTALLING_NOTE, state.note)
+    }
+
+    @Test
+    fun `a retry after a failed install calls the installer again`() {
+        val file = File(UpdateManager.downloadFolder(context).apply { mkdirs() }, "margin-v99.0.0-viwoods-debug.apk")
+            .apply { writeText("x") }
+        val release = ReleaseInfo("v99.0.0", AppVersion(99, 0, 0), "t", "", false, emptyList())
+        UpdateManager.force(UpdateState.Ready(release, file, handedOver = true, note = "Install cancelled."))
+
+        UpdateManager.install(context)
+
+        val state = UpdateManager.state.value as UpdateState.Ready
+        assertTrue(state.handedOver)
+        assertNotEquals("Install cancelled.", state.note)
+    }
+
+    @Test
+    fun `a check while a download is waiting to install does nothing`() {
+        val file = File(UpdateManager.downloadFolder(context).apply { mkdirs() }, "margin-v99.0.0-viwoods-debug.apk")
+            .apply { writeText("x") }
+        val release = ReleaseInfo("v99.0.0", AppVersion(99, 0, 0), "t", "", false, emptyList())
+        val ready = UpdateState.Ready(release, file)
+        UpdateManager.force(ready)
+
+        UpdateManager.check(context)
+
+        assertEquals(ready, UpdateManager.state.value)
+        assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun `install failure codes become plain sentences and other text passes through`() {
+        assertEquals(
+            "This build was signed with a different key. Uninstall Margin, then install the new file.",
+            plainInstallFailure("INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match"),
+        )
+        assertEquals("Not enough space.", plainInstallFailure("INSTALL_FAILED_INSUFFICIENT_STORAGE"))
+        assertEquals("Install cancelled.", plainInstallFailure("INSTALL_FAILED_ABORTED"))
+        assertEquals("Install cancelled.", plainInstallFailure("STATUS_FAILURE_ABORTED"))
+        assertEquals("Install cancelled.", plainInstallFailure("User cancelled the install"))
+        assertEquals("Android blocked the install.", plainInstallFailure("Android blocked the install."))
     }
 
     @Test

@@ -1,22 +1,30 @@
 package io.github.foxesrcool1.margin.ui.update
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,9 +91,9 @@ fun UpdateScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     // One press covers "download" and "install". The install only starts from
     // here, while this screen is in front, because Android does not let an
     // app that is out of sight open the install window.
-    LaunchedEffect(state) {
+    LaunchedEffect(state, installAllowed) {
         val ready = state as? UpdateState.Ready
-        if (ready != null && !ready.handedOver) UpdateManager.install(context)
+        if (installAllowed && ready != null && !ready.handedOver) UpdateManager.install(context)
     }
 
     UpdateContent(
@@ -107,6 +115,7 @@ fun UpdateScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             // The saved token is not shown again. An empty answer removes it.
             initialValue = "",
             allowEmpty = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
             onConfirm = { typed ->
                 askForToken = false
                 scope.launch {
@@ -137,6 +146,11 @@ fun UpdateContent(
     modifier: Modifier = Modifier,
 ) {
     val busy = state is UpdateState.Checking || state is UpdateState.Downloading
+    // Which page of the release notes is showing. Starts again on the first page for each release.
+    val notesVersion = (state as? UpdateState.Available)?.release?.version
+    var notePage by remember(notesVersion) { mutableIntStateOf(0) }
+    var notesSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
 
     ScreenScaffold(
         title = "Updates",
@@ -146,12 +160,27 @@ fun UpdateContent(
         backIcon = Lucide.ArrowLeft,
         backLabel = "Back",
         actions = {
-            IconPressButton(icon = Lucide.RefreshCw, label = "Check again", enabled = !busy, bordered = true, onClick = onCheck)
+            IconPressButton(
+                icon = Lucide.RefreshCw,
+                label = "Check again",
+                enabled = !busy && state !is UpdateState.Ready,
+                bordered = true,
+                onClick = onCheck,
+            )
         },
     ) {
+        // Release notes are cut into pages that fit the room, so no line is lost.
+        val notes = (state as? UpdateState.Available)?.let { UpdateStrings.plainNotes(it.release.notes) }.orEmpty()
+        // Rows and characters per row come from the measured notes area, so a long line wraps and no row is cut.
+        val rowsPerPage = (notesSize.height / with(density) { EinkType.body.lineHeight.toPx() }).toInt().coerceAtLeast(1)
+        val charsPerRow = with(density) {
+            (notesSize.width.toDp().value / (EinkType.body.fontSize.toDp().value * 0.55f)).toInt().coerceAtLeast(10)
+        }
+        val pages = notePages(notes.lines().filter { it.isNotEmpty() }, rowsPerPage, charsPerRow)
+        val pageIndex = notePage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
 
         // Cut off at the footer if a long message ever grows too tall. The
-        // footer holds the permission and the token, and must stay in reach.
+        // primary button sits below this, so it is never cut.
         Column(modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
             EinkText(text = UpdateStrings.headline(state), style = EinkType.rowTitle)
             UpdateStrings.detail(state)?.let { detail ->
@@ -161,36 +190,63 @@ fun UpdateContent(
                 EinkText(text = detail, style = EinkType.body, maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
 
-            when (state) {
-                is UpdateState.Available -> {
-                    Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-                    InvertPressButton(text = "Update", icon = Lucide.Download, onClick = onDownload)
-                    val notes = UpdateStrings.plainNotes(state.release.notes)
-                    if (notes.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(EinkDimens.blockGap))
-                        CapsLabel(text = "What's New", style = EinkType.capsSmall)
-                        HairlineDivider(color = EinkColors.Faded)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        EinkText(
-                            text = notes,
-                            style = EinkType.body,
-                            maxLines = 9,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            if (notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(EinkDimens.blockGap))
+                CapsLabel(text = "What's New", style = EinkType.capsSmall)
+                HairlineDivider(color = EinkColors.Faded)
+                Spacer(modifier = Modifier.height(6.dp))
+                // Only this box is measured, so the headline and the detail above
+                // do not count against the rows a page may have.
+                Box(modifier = Modifier.fillMaxWidth().weight(1f).onSizeChanged { notesSize = it }.clipToBounds()) {
+                    if (pages.isNotEmpty()) EinkText(text = pages[pageIndex].joinToString("\n"), style = EinkType.body)
+                }
+            }
+        }
+
+        // The primary button and the page controls stay in a fixed area below the notes.
+        val hasPrimary = state is UpdateState.Available || state is UpdateState.Ready ||
+            (state is UpdateState.Failed && state.tokenProblem)
+        if (hasPrimary) {
+            Spacer(modifier = Modifier.height(EinkDimens.targetGap))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                when (state) {
+                    is UpdateState.Available -> InvertPressButton(
+                        text = "Update",
+                        icon = Lucide.Download,
+                        onClick = onDownload,
+                        modifier = Modifier.weight(1f),
+                    )
+                    is UpdateState.Ready -> InvertPressButton(
+                        text = "Install",
+                        icon = Lucide.Download,
+                        onClick = onInstall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    is UpdateState.Failed -> if (state.tokenProblem) {
+                        InvertPressButton(text = "Add Token", onClick = onToken, modifier = Modifier.weight(1f))
                     }
+                    else -> Unit
                 }
-
-                is UpdateState.Ready -> {
-                    Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-                    InvertPressButton(text = "Install", icon = Lucide.Download, onClick = onInstall)
+                if (pages.size > 1) {
+                    IconPressButton(
+                        icon = Lucide.ChevronLeft,
+                        label = "Previous",
+                        onClick = { notePage = pageIndex - 1 },
+                        enabled = pageIndex > 0,
+                        bordered = true,
+                    )
+                    IconPressButton(
+                        icon = Lucide.ChevronRight,
+                        label = "Next",
+                        onClick = { notePage = pageIndex + 1 },
+                        enabled = pageIndex < pages.size - 1,
+                        bordered = true,
+                    )
                 }
-
-                is UpdateState.Failed -> if (state.tokenProblem) {
-                    Spacer(modifier = Modifier.height(EinkDimens.targetGap))
-                    InvertPressButton(text = "Add Token", onClick = onToken)
-                }
-
-                else -> Unit
             }
         }
 
@@ -215,11 +271,34 @@ fun UpdateContent(
                 Spacer(modifier = Modifier.height(10.dp))
                 CapsLabel(
                     text = "Token saved",
-                    style = EinkType.capsSmall.copy(color = EinkColors.Faded),
+                    style = EinkType.capsSmall,
                 )
             }
         }
     }
+}
+
+/**
+ * Cuts the release-note lines into pages. A line costs one row for each
+ * [charsPerRow] characters it has (at least one row). Lines are packed in order
+ * while the rows fit in [rowsPerPage]. A line too tall for a page gets a page of its own.
+ */
+internal fun notePages(lines: List<String>, rowsPerPage: Int, charsPerRow: Int): List<List<String>> {
+    val pages = mutableListOf<List<String>>()
+    var page = mutableListOf<String>()
+    var used = 0
+    for (line in lines) {
+        val cost = maxOf(1, (line.length + charsPerRow - 1) / charsPerRow)
+        if (page.isNotEmpty() && used + cost > rowsPerPage) {
+            pages += page
+            page = mutableListOf()
+            used = 0
+        }
+        page += line
+        used += cost
+    }
+    if (page.isNotEmpty()) pages += page
+    return pages
 }
 
 /** The words of the update screen. Kept apart so a plain test can read them. */

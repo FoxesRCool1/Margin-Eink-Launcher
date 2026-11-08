@@ -71,7 +71,9 @@ object UpdateManager {
         get() = AppVersion.parse(BuildConfig.VERSION_NAME)
 
     fun check(context: Context) {
-        val busy = mutableState.value.let { it is UpdateState.Checking || it is UpdateState.Downloading }
+        val busy = mutableState.value.let {
+            it is UpdateState.Checking || it is UpdateState.Downloading || it is UpdateState.Ready
+        }
         if (busy) return
         val installed = installedVersion ?: run {
             mutableState.value = UpdateState.Failed("No version number: ${BuildConfig.VERSION_NAME}")
@@ -115,7 +117,8 @@ object UpdateManager {
             }
             AppLog.i(TAG, "Downloaded and checked ${file.name}")
 
-            mutableState.value = when (val verdict = ApkCheck.inspect(app, file)) {
+            val promised = from.release.version.code.toLong()
+            mutableState.value = when (val verdict = ApkCheck.inspect(app, file, promised)) {
                 is ApkVerdict.Ok -> UpdateState.Ready(from.release, file)
                 is ApkVerdict.Refused -> {
                     file.delete()
@@ -127,6 +130,7 @@ object UpdateManager {
 
     fun install(context: Context) {
         val from = mutableState.value as? UpdateState.Ready ?: return
+        if (from.handedOver && from.note == INSTALLING_NOTE) return
         val app = context.applicationContext
         mutableState.value = from.copy(handedOver = true, note = INSTALLING_NOTE)
         scope.launch(dispatcher) {
@@ -136,10 +140,15 @@ object UpdateManager {
         }
     }
 
-    /** Called by [InstallStatusReceiver]. The file stays, so the user can try again. */
+    /**
+     * Called by [InstallStatusReceiver]. The file stays, so the user can try again.
+     * ponytail: results of an older session are not told apart; add the session id here if a stale result ever shows.
+     */
     fun onInstallFailed(message: String) {
+        AppLog.i(TAG, "install failed: $message")
+        val plain = plainInstallFailure(message)
         mutableState.update { now ->
-            if (now is UpdateState.Ready) now.copy(handedOver = true, note = message) else UpdateState.Failed(message)
+            if (now is UpdateState.Ready) now.copy(handedOver = true, note = plain) else UpdateState.Failed(plain)
         }
     }
 
@@ -177,7 +186,7 @@ object UpdateManager {
     // While Android swaps the app, it cannot be the home screen, so Android
     // shows the other launcher. It stays in front until the Home key is
     // pressed. Seen on the emulator, where this app was the home app.
-    private const val INSTALLING_NOTE =
+    internal const val INSTALLING_NOTE =
         "Installing. If the old home screen shows, press Home."
 
     /** For tests. */
@@ -187,4 +196,15 @@ object UpdateManager {
     internal fun force(state: UpdateState) {
         mutableState.value = state
     }
+}
+
+/** Turns a raw installer message into one plain sentence. Unknown text passes through. */
+internal fun plainInstallFailure(raw: String): String = when {
+    raw.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ->
+        "This build was signed with a different key. Uninstall Margin, then install the new file."
+    raw.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") -> "Not enough space."
+    raw.contains("INSTALL_FAILED_ABORTED") || raw.contains("STATUS_FAILURE_ABORTED") -> "Install cancelled."
+    raw.contains("User") && (raw.contains("abort", ignoreCase = true) || raw.contains("cancel", ignoreCase = true)) ->
+        "Install cancelled."
+    else -> raw
 }

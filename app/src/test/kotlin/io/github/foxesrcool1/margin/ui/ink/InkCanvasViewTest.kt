@@ -87,6 +87,60 @@ class InkCanvasViewTest {
         assertEquals(Color.WHITE, pixel(200, 100))
     }
 
+    /** A touch with two pointers: id 0 is the pen, id 1 is a resting palm. */
+    private fun twoPointers(action: Int, penX: Float, palmX: Float): MotionEvent {
+        val pen = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_STYLUS }
+        val palm = MotionEvent.PointerProperties().apply { id = 1; toolType = MotionEvent.TOOL_TYPE_FINGER }
+        val penAt = MotionEvent.PointerCoords().apply { x = penX; y = 100f; pressure = 0.6f; size = 1f }
+        val palmAt = MotionEvent.PointerCoords().apply { x = palmX; y = 500f; pressure = 0.6f; size = 1f }
+        val now = SystemClock.uptimeMillis()
+        return MotionEvent.obtain(now, now, action, 2, arrayOf(pen, palm), arrayOf(penAt, palmAt), 0, 0, 1f, 1f, 0, 0, 0, 0)
+    }
+
+    @Test
+    fun `a palm that stays down after the pen lifts does not lose the stroke or turn the page`() {
+        var swipes = 0
+        view.onPageSwipe = { swipes++ }
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        view.dispatchTouchEvent(twoPointers(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 100f, 600f))
+        view.dispatchTouchEvent(twoPointers(MotionEvent.ACTION_MOVE, 200f, 600f))
+        // The pen lifts first. The palm is pointer 1 and becomes index 0.
+        view.dispatchTouchEvent(twoPointers(MotionEvent.ACTION_POINTER_UP, 300f, 600f))
+        assertEquals(1, view.editor.strokeCount)
+        val palmOnly = MotionEvent.PointerProperties().apply { id = 1; toolType = MotionEvent.TOOL_TYPE_FINGER }
+        val palmAt = MotionEvent.PointerCoords().apply { x = 10f; y = 500f; pressure = 0.6f; size = 1f }
+        val now = SystemClock.uptimeMillis()
+        view.dispatchTouchEvent(MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, 1, arrayOf(palmOnly), arrayOf(palmAt), 0, 0, 1f, 1f, 0, 0, 0, 0))
+        assertEquals(0, swipes)
+        assertEquals(1, view.editor.strokeCount)
+    }
+
+    @Test
+    fun `the eraser tool is sent again to a new fast pen session`() {
+        val sent = mutableListOf<Boolean>()
+        view.mode = InkMode.Eraser
+        view.onErasingChanged = { sent += it }
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 100f, 120f to 100f)
+        view.onErasingChanged = null
+        view.onErasingChanged = { sent += it }
+        drag(MotionEvent.TOOL_TYPE_STYLUS, 100f to 100f, 120f to 100f)
+        assertEquals(listOf(true, true), sent)
+    }
+
+    @Test
+    fun `a cancelled stroke the tablet drew is repainted when the wait is over`() {
+        view.deviceDrawsLive = true
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, 300f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_CANCEL, 300f, 100f, MotionEvent.TOOL_TYPE_STYLUS))
+        assertEquals(0, view.editor.strokeCount)
+        // The place of the abandoned line is owed a repaint. The box is private.
+        val owed = InkCanvasView::class.java.getDeclaredField("owedBox").apply { isAccessible = true }.get(view) as android.graphics.RectF
+        assertTrue("the abandoned line's box is owed", !owed.isEmpty)
+        view.settle()
+        assertTrue(owed.isEmpty)
+    }
+
     @Test
     fun `a curve passes through the middle of its corners, not the corners`() {
         // Three points make a sharp corner at (200, 100). The line bends

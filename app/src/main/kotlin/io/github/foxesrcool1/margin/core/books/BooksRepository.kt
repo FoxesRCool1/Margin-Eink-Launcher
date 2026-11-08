@@ -1,6 +1,7 @@
 package io.github.foxesrcool1.margin.core.books
 
 import io.github.foxesrcool1.margin.core.log.AppLog
+import io.github.foxesrcool1.margin.core.reading.AnnotationsFile
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import io.github.foxesrcool1.margin.core.storage.StoredEntry
@@ -87,29 +88,38 @@ class BooksRepository(private val data: DataRepository) {
         list().map { it to lastReadAt(it) }.sortedByDescending { it.second }.map { it.first }
 
     /**
-     * The book that was opened last, with the time the reader last saved its
-     * place, or null when no book was ever opened. Unlike [byRecent] it
-     * ignores the day a book came in, and it reads the title of one book only.
-     */
-    fun lastRead(): Pair<LibraryBook, Long>? = recentlyRead(1).firstOrNull()
-
-    /**
      * The books the reader last saved a place in, newest first. A book that
      * was never opened is not in the list, unlike [byRecent].
      */
     fun recentlyRead(count: Int): List<Pair<LibraryBook, Long>> {
         if (count <= 0) return emptyList()
         return data.listBooks()
-            .map { it to data.store.lastModified(StorageLayout.annotationsPath(StorageLayout.bookIdFor(it.name, it.sizeBytes))) }
-            .filter { it.second > 0L }
+            .map { stored ->
+                val bookId = StorageLayout.bookIdFor(stored.name, stored.sizeBytes)
+                val path = StorageLayout.annotationsPath(bookId)
+                val fileDate = data.store.lastModified(path)
+                if (fileDate <= 0L) return@map null
+                // The reader stamps the time it last saved the place in the
+                // book, and it outlives a restore, when every file comes back
+                // with the day it was copied. The file date is the fallback
+                // for files that have no stamp yet. The stamp only decides the
+                // order of the books. The time handed back stays the file
+                // date, because callers set it beside the file date of a note.
+                val lastOpened = data.store.readText(path)
+                    ?.let(AnnotationsFile::parse)
+                    ?.lastOpened
+                    ?: 0L
+                Triple(stored, if (lastOpened > 0L) lastOpened else fileDate, fileDate)
+            }
+            .filterNotNull()
             .sortedByDescending { it.second }
             .take(count)
-            .map { (stored, readAt) ->
+            .map { (stored, _, fileDate) ->
                 LibraryBook(
                     stored = stored,
                     metadata = metadataOf(stored),
                     bookId = StorageLayout.bookIdFor(stored.name, stored.sizeBytes),
-                ) to readAt
+                ) to fileDate
             }
     }
 
@@ -134,7 +144,7 @@ class BooksRepository(private val data: DataRepository) {
         // The notes the user made about it go too, or they become orphans that
         // nothing can ever open again.
         data.store.delete(StorageLayout.annotationsPath(book.bookId))
-        data.store.delete("${StorageLayout.ANNOTATIONS}/${book.bookId}")
+        data.store.delete("${StorageLayout.ANNOTATIONS}/${StorageLayout.safeName(book.bookId)}")
         return true
     }
 

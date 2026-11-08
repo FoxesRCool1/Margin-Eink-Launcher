@@ -78,8 +78,11 @@ dies on start is a tablet that cannot be used.
 
 `FastPenGuard` writes "trying" to a small file before the risky call and
 "fine" after it. If the app starts and finds "trying", the call never came
-back. That path is then refused until someone resets it on the device test
-screen. Worst case: one crash, one time.
+back. Since 1.4.0 (decision 0030) one such finding puts the path in doubt
+and a second in a row refuses it, until someone resets it on the device test
+screen. One finding alone was too strict: any process death in that short
+window, an update install or a memory kill, banned the pen for ever.
+Worst case now: one crash, twice.
 
 ### 5. The app always keeps its own strokes
 

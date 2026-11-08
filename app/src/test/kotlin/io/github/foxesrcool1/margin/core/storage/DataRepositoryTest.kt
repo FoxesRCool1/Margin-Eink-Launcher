@@ -60,7 +60,7 @@ class DataRepositoryTest {
         )
         val imported = result as ImportResult.Imported
         assertTrue(RelativePaths.isSafe(imported.relativePath))
-        assertEquals("books/Book- part 1-2 -draft-.epub", imported.relativePath)
+        assertEquals("books/Book- part 1-2 -draft.epub", imported.relativePath)
     }
 
     @Test
@@ -229,5 +229,18 @@ class DataRepositoryTest {
 
         val copies = store.list("habits").filter { it.name.startsWith("habits.unreadable") }
         assertEquals(2, copies.size)
+    }
+
+    @Test
+    fun `a free path for a taken folder keeps the whole name`() {
+        store.createDirectories("notes/Drafts v1.2")
+        assertEquals("notes/Drafts v1.2 2", repository.freePath("notes/Drafts v1.2"))
+    }
+
+    @Test
+    fun `a fresh part file is not swept away`() {
+        store.writeText("notes/plan.md.part-1", "half written")
+        assertEquals(0, repository.sweepLeftovers())
+        assertTrue(store.exists("notes/plan.md.part-1"))
     }
 }

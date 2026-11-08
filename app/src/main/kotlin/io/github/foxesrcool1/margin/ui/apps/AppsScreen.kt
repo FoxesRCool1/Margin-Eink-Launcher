@@ -33,6 +33,7 @@ import io.github.foxesrcool1.margin.core.apps.AppSearch
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
+import io.github.foxesrcool1.margin.core.speed.SpeedWatch
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
@@ -148,6 +149,14 @@ fun AppsScreen(
     var deletingFolder by remember { mutableStateOf<AppFolder?>(null) }
     var addingFolder by remember { mutableStateOf(false) }
     var pinFullNotice by remember { mutableStateOf(false) }
+    // Blank lists until the first load ends, so no empty-state text shows early.
+    var loaded by remember { mutableStateOf(false) }
+    // Shown under the toolbar when an app will not open. The next tap clears it.
+    var notice by remember { mutableStateOf<String?>(null) }
+    fun openEntry(entry: LauncherEntry) {
+        notice = null
+        if (!opener.openApp(entry)) notice = "Could not open ${entry.label}"
+    }
 
     val pinnedKeys by settings.pinnedApps.collectAsStateWithLifecycle(initialValue = emptyList())
     val listState = rememberPagedListState()
@@ -156,18 +165,22 @@ fun AppsScreen(
         if (previewApps != null) return@LaunchedEffect
         folders = withContext(AppDispatchers.io) { folderStore.load() }
         repository.packageChanges().collect {
-            val loaded = withContext(AppDispatchers.io) { repository.loadAll() }
-            val ways = withContext(AppDispatchers.io) { repository.escapeEntries(loaded) }
-            apps = loaded
+            val started = System.currentTimeMillis()
+            val list = withContext(AppDispatchers.io) { repository.loadAll() }
+            SpeedWatch.check("Loading the apps", System.currentTimeMillis() - started, SpeedWatch.Budget.APPS_LOAD)
+            val ways = withContext(AppDispatchers.io) { repository.escapeEntries(list) }
+            apps = list
             escapes = ways
-            // An uninstalled app would keep a pin: it counts toward the limit
-            // and has no row to unpin it from. An empty list is not trusted,
-            // it may be a failed query. Folders keep their keys on purpose.
-            if (loaded.isNotEmpty()) {
-                val installed = loaded.mapTo(HashSet()) { it.key }
-                val pinned = settings.pinnedApps.first()
-                if (pinned.any { it !in installed }) settings.setPinnedApps(pinned.filter { it in installed })
+            loaded = true
+            // A pin is dropped only when the system says its app is gone. An app
+            // missing from the list may just be slow to show up. Folders keep their keys.
+            val pinned = settings.pinnedApps.first()
+            val gone = withContext(AppDispatchers.io) {
+                val pm = context.packageManager
+                pinned.filter { isUninstalled(pm, it.substringBefore('/')) }
             }
+            // Read the pins again: one may have been toggled while the check ran.
+            if (gone.isNotEmpty()) settings.setPinnedApps(settings.pinnedApps.first().filter { it !in gone })
         }
     }
 
@@ -267,6 +280,14 @@ fun AppsScreen(
             }
         },
     ) {
+        notice?.let {
+            CapsLabel(
+                text = it,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
         val typed = search
         if (inFolder == null && page == AppsPage.All && typed != null) {
             EinkTextField(
@@ -278,7 +299,7 @@ fun AppsScreen(
                 // user types three letters and is there.
                 onSubmit = {
                     val first = listed.firstNotNullOfOrNull { (it as? AllPageRow.App)?.entry }
-                    if (!typed.isBlank() && first != null) opener.openApp(first)
+                    if (!typed.isBlank() && first != null) openEntry(first)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -294,12 +315,12 @@ fun AppsScreen(
                 items = folderApps,
                 pageSize = PAGE_SIZE,
                 rowHeight = EinkDimens.rowOneLine,
-                emptyText = "This folder is empty. Hold an app on the A to Z page and choose Folders.",
+                emptyText = if (loaded) "This folder is empty. Hold an app on the A to Z page and choose Folders." else "",
                 modifier = Modifier.weight(1f),
             ) { _, entry ->
                 AppRow(
                     label = entry.label,
-                    onOpen = { opener.openApp(entry) },
+                    onOpen = { openEntry(entry) },
                     onLongPress = { menuFor = entry },
                 )
             }
@@ -308,14 +329,14 @@ fun AppsScreen(
                 items = firstPage,
                 pageSize = PAGE_SIZE,
                 rowHeight = EinkDimens.rowOneLine,
-                emptyText = "No pinned apps yet. Hold an app on the A to Z page and choose Pin.",
+                emptyText = if (loaded) "No pinned apps yet. Hold an app on the A to Z page and choose Pin." else "",
                 modifier = Modifier.weight(1f),
             ) { _, row ->
                 when (row) {
                     is FirstPageRow.Pinned -> AppRow(
                         label = row.entry.label,
                         iconRoom = escapes.isNotEmpty(),
-                        onOpen = { opener.openApp(row.entry) },
+                        onOpen = { openEntry(row.entry) },
                         onLongPress = { menuFor = row.entry },
                     )
 
@@ -323,7 +344,10 @@ fun AppsScreen(
                         label = row.escape.label,
                         hint = row.escape.hint,
                         icon = if (row.escape.kind == EscapeKind.OtherHome) Lucide.House else Lucide.Settings,
-                        onOpen = { repository.launchEscape(row.escape) },
+                        onOpen = {
+                            notice = null
+                            if (!repository.launchEscape(row.escape)) notice = "Could not open ${row.escape.label}"
+                        },
                     )
                 }
             }
@@ -332,7 +356,7 @@ fun AppsScreen(
                 items = folders.folders,
                 pageSize = PAGE_SIZE,
                 rowHeight = EinkDimens.rowOneLine,
-                emptyText = "No folders yet. Press the folder with the plus sign.",
+                emptyText = if (loaded) "No folders yet. Press the folder with the plus sign." else "",
                 modifier = Modifier.weight(1f),
             ) { _, folder ->
                 val installed = folder.apps.count { it in byKey }
@@ -340,7 +364,10 @@ fun AppsScreen(
                     label = folder.name,
                     hint = if (installed == 1) "1 app" else "$installed apps",
                     icon = Lucide.Folder,
-                    onOpen = { openFolder = folder.name },
+                    onOpen = {
+                        notice = null
+                        openFolder = folder.name
+                    },
                     onLongPress = { folderMenuFor = folder },
                 )
             }
@@ -350,7 +377,11 @@ fun AppsScreen(
                 pageSize = PAGE_SIZE,
                 rowHeight = EinkDimens.rowOneLine,
                 state = listState,
-                emptyText = if (!typed.isNullOrBlank()) "No app is called that." else "No apps found",
+                emptyText = when {
+                    !loaded -> ""
+                    !typed.isNullOrBlank() -> "No app is called that."
+                    else -> "No apps found"
+                },
                 modifier = Modifier.weight(1f),
             ) { _, row ->
                 when (row) {
@@ -359,7 +390,7 @@ fun AppsScreen(
                         iconRoom = listed.any { it is AllPageRow.HiddenToggle },
                         hint = if (folders.isHidden(row.entry.key)) "Hidden" else null,
                         mark = if (pinnedKeys.contains(row.entry.key)) Lucide.Pin else null,
-                        onOpen = { opener.openApp(row.entry) },
+                        onOpen = { openEntry(row.entry) },
                         onLongPress = { menuFor = row.entry },
                     )
 
@@ -370,7 +401,10 @@ fun AppsScreen(
                             else -> "${row.count} hidden apps"
                         },
                         icon = if (row.showing) Lucide.EyeOff else Lucide.Eye,
-                        onOpen = { showHidden = !row.showing },
+                        onOpen = {
+                            notice = null
+                            showHidden = !row.showing
+                        },
                     )
                 }
             }

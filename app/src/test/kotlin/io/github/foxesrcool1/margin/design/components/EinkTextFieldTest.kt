@@ -16,7 +16,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -261,6 +263,44 @@ class EinkTextFieldTest {
         compose.onNodeWithTag("field").performKeyInput { pressKey(Key.Enter) }
         compose.waitForIdle()
         assertEquals(2, submitted)
+    }
+
+    @Test
+    fun `a hint shows while the field is empty and goes once something is typed`() {
+        compose.setContent {
+            EinkTheme {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    EinkTextField(
+                        value = "",
+                        onValueChange = {},
+                        hint = "Search",
+                        modifier = Modifier.fillMaxWidth().testTag("field"),
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText("Search", ignoreCase = true, useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("field").performClick()
+        compose.onNodeWithTag("field").performTextInput("abc")
+        compose.waitForIdle()
+        compose.onNodeWithText("Search", ignoreCase = true, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a field with a hint has the hint as its content description`() {
+        compose.setContent {
+            EinkTheme {
+                EinkTextField(
+                    value = "",
+                    onValueChange = {},
+                    hint = "Search",
+                    modifier = Modifier.fillMaxWidth().testTag("field"),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Search").assertExists()
     }
 }
 

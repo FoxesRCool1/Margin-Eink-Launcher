@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.TextAutoSize
@@ -28,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -123,13 +127,13 @@ fun HomeScreen(
     showLabels: Boolean = false,
 ) {
     val context = LocalContext.current
-    val clock by rememberMinuteClock()
-    val time = now ?: clock
+    // Battery and Wi-Fi are read by the minute receiver, with the clock, and not
+    // here in composition. E-ink rule 7: as few screen changes as possible.
+    val minute by rememberMinuteStatus()
+    val time = now ?: minute.time
 
-    // All three are read once a minute, with the clock, and not on a timer of
-    // their own. E-ink rule 7: as few screen changes as possible.
-    val batteryPercent = remember(time.minute, battery) { battery ?: batteryPercent(context) }
-    val onWifi = remember(time.minute, wifi) { wifi ?: onWifi(context) }
+    val batteryPercent = battery ?: minute.battery
+    val onWifi = wifi ?: minute.wifi
     val twentyFourHour = remember(time.minute, use24Hour) {
         use24Hour ?: runCatching { android.text.format.DateFormat.is24HourFormat(context) }.getOrDefault(true)
     }
@@ -143,21 +147,28 @@ fun HomeScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                var dragTotal = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { dragTotal = 0f },
-                    onDragEnd = {
-                        if (dragTotal <= -swipeThresholdPx) {
+            .pointerInput(swipeThresholdPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (down.type == PointerType.Stylus || down.type == PointerType.Eraser) {
+                        // A pen stroke is not a swipe: wait for the pen to lift.
+                        do {
+                            val event = awaitPointerEvent()
+                        } while (event.changes.any { it.pressed })
+                    } else {
+                        var dragTotal = 0f
+                        // A cancelled drag (false) is no swipe.
+                        val finished = drag(down.id) { change ->
+                            dragTotal += change.positionChange().y
+                            change.consume()
+                        }
+                        if (finished && dragTotal <= -swipeThresholdPx) {
                             swipeUp()
-                        } else if (dragTotal >= swipeThresholdPx) {
+                        } else if (finished && dragTotal >= swipeThresholdPx) {
                             swipeDown()
                         }
-                        dragTotal = 0f
-                    },
-                    onDragCancel = { dragTotal = 0f },
-                    onVerticalDrag = { _, amount -> dragTotal += amount },
-                )
+                    }
+                }
             },
     ) {
         val wide = maxWidth > maxHeight
@@ -167,6 +178,9 @@ fun HomeScreen(
         val compact = maxWidth < 420.dp || maxHeight < 400.dp
         val clockStyle = if (compact) ClockSmall else ClockLarge
         val gap = if (compact) 8.dp else 16.dp
+        // A narrow half cannot fit the status line (about 110 dp) in the bottom row
+        // beside the icons and their gaps, so it gets a row of its own above the divider.
+        val statusOwnRow = maxWidth < (if (compact) 430.dp else 500.dp)
 
         // Top corner. The bottom edge holds the controls, and a drawing under
         // a control makes both harder to read.
@@ -271,32 +285,44 @@ fun HomeScreen(
                 }
             }
 
-            HairlineDivider(color = EinkColors.Faded)
-            Spacer(modifier = Modifier.height(if (wide || compact) 4.dp else EinkDimens.targetGap))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // The status is one target, as wide as it is. The room to its
-                // right is not part of it.
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (statusOwnRow) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                     StatusLine(
                         batteryPercent = batteryPercent,
                         onWifi = onWifi,
                         onClick = { openInternetPanel(context) },
                     )
                 }
-                // A narrow half has no room for both, and the status needs its own.
+            }
+            HairlineDivider(color = EinkColors.Faded)
+            Spacer(modifier = Modifier.height(if (wide || compact) 4.dp else EinkDimens.targetGap))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (statusOwnRow) {
+                    Spacer(modifier = Modifier.weight(1f))
+                } else {
+                    // The status is one target, as wide as it is. The room to its
+                    // right is not part of it.
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        StatusLine(
+                            batteryPercent = batteryPercent,
+                            onWifi = onWifi,
+                            onClick = { openInternetPanel(context) },
+                        )
+                    }
+                }
                 if (!compact) {
                     IconPressButton(icon = Lucide.Signature, label = "Quick handwritten page", onClick = onQuickInk)
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                 }
                 IconPressButton(icon = Lucide.SquarePen, label = "Quick note", onClick = onQuickNote)
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                 SplitButton()
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                 IconPressButton(icon = Lucide.Search, label = "Search", onClick = { onOpenTab(LauncherRoute.Search) })
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(EinkDimens.targetGap))
                 IconPressButton(icon = Lucide.Settings, label = "Settings", onClick = onOpenSettings)
             }
         }
@@ -523,7 +549,7 @@ private fun TabGrid(
 ) {
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val gap = 20.dp
-        val cell = minOf((maxHeight - gap) / 2, (maxWidth - gap) / 2, 120.dp)
+        val cell = minOf((maxHeight - gap) / 2, (maxWidth - gap) / 2, 120.dp).coerceAtLeast(EinkDimens.touchTarget)
         val labelStyle = rememberFittedCaps(LauncherRoute.tabs.map { it.title }, cell)
         Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             LauncherRoute.tabs.chunked(2).forEach { line ->

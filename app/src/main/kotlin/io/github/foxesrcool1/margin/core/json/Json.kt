@@ -112,7 +112,8 @@ object Json {
 
     private class Reader(private val text: String) {
 
-        private var index = 0
+        // A byte order mark at the very start is skipped; one anywhere else is an error.
+        private var index = if (text.startsWith('\uFEFF')) 1 else 0
 
         fun atEnd(): Boolean = index >= text.length
 
@@ -237,8 +238,10 @@ object Json {
                             'u' -> {
                                 if (index + 4 >= text.length) fail("The \\u escape is too short")
                                 val code = text.substring(index + 1, index + 5)
-                                val number = code.toIntOrNull(16) ?: fail("'$code' is not hex")
-                                out.append(number.toChar())
+                                if (!code.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                                    fail("'$code' is not four hex digits")
+                                }
+                                out.append(code.toInt(16).toChar())
                                 index += 4
                             }
                             else -> fail("Unknown escape '\\$escaped'")
@@ -270,9 +273,9 @@ object Json {
             }
 
             val slice = text.substring(start, index)
-            val value = slice.toDoubleOrNull() ?: run {
+            val value = slice.toDoubleOrNull()?.takeIf { it.isFinite() } ?: run {
                 index = start
-                fail("'$slice' is not a number")
+                fail("'$slice' is not a finite number")
             }
             return JsonNumber(value)
         }

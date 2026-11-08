@@ -119,7 +119,7 @@ private fun LogRow(line: LogLine) {
         CapsLabel(
             text = "${line.level.short}  ${line.tag}",
             style = EinkType.capsSmall.copy(
-                color = if (line.level.short == 'E') EinkColors.Ink else EinkColors.Faded,
+                color = EinkColors.Ink,
             ),
         )
         EinkText(

@@ -155,9 +155,9 @@ private fun <T> PagedListPage(
                         .weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CapsLabel(
+                    EinkText(
                         text = emptyText,
-                        style = EinkType.caps.copy(color = EinkColors.Faded, textAlign = TextAlign.Center),
+                        style = EinkType.body.copy(color = EinkColors.Ink, textAlign = TextAlign.Center),
                         maxLines = 3,
                     )
                 }

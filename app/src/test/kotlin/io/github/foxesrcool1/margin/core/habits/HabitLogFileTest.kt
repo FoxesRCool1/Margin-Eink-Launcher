@@ -99,4 +99,27 @@ class HabitLogFileTest {
         assertEquals(setOf(LocalDate.of(2026, 9, 18)), HabitLogFile.datesFor(marks, "walk"))
         assertTrue(HabitLogFile.datesFor(marks, "nothing").isEmpty())
     }
+
+    @Test
+    fun `a byte order mark at the start does not cost the first row`() {
+        val text = HabitLogFile.serialise(marks)
+        assertEquals(HabitLogFile.parse(text), HabitLogFile.parse(Char(0xFEFF).toString() + text))
+    }
+
+    @Test
+    fun `the number of lines left out is counted`() {
+        val text = "date,habit\n2026/11/8,run\n2026-09-18,read\n2026-09-19\n"
+        assertEquals(
+            Pair(listOf(HabitMark("read", LocalDate.of(2026, 9, 18))), 2),
+            HabitLogFile.parseCounting(text),
+        )
+    }
+
+    @Test
+    fun `a blank line before the header is not counted as dropped`() {
+        assertEquals(
+            Pair(listOf(HabitMark("read", LocalDate.of(2026, 9, 18))), 0),
+            HabitLogFile.parseCounting("\ndate,habit\n2026-09-18,read\n"),
+        )
+    }
 }

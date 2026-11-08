@@ -1,5 +1,19 @@
 # Release notes
 
+## 1.4.0
+
+- A review of the whole app, and the fixes for what it found. Decision 0030 and `docs/REVIEW-2026-11-08.md`
+- Books: the reader shows its messages while you read. If an old notes file cannot be read, a line says so and nothing new is lost in silence. A damaged PDF page says "This page could not be shown" instead of closing the app. Books written right to left turn the right way. A renamed book no longer leaves ghost notes in Search
+- Files: a backup now holds your settings too. A power cut right after a save cannot leave an empty note. A book with a very long name keeps its extension and shows in the list. A hand-edited file with one bad line is kept aside instead of wiped
+- Journal: days in the month view are always finger sized; a long month turns in pages. Remove, Archive and Cancel ask first. Archived habits can be seen and restored. A routine item can open Read, Write, Journal or Apps. New Settings rows: Daily Word Goal, Day Boundary
+- Split screen: a journal day can no longer be open twice. A note renamed or moved while open in the other half follows
+- Pen: the eraser is sent to the tablet again after the menu closes. A fast pen start that half failed is undone. A save that fails is tried again and says so
+- Apps: Uninstall works. Names sort by language rules. A tap on an app that cannot open says so
+- Home: the status line has its own row in a narrow half. A pen stroke on Home is not a swipe
+- Updates: one plain sentence for a failed install, the Install button is never cut off, and a double tap cannot start two installs
+- Screen reader: rows, switches, selected tools and text fields now tell TalkBack what they are
+- Fewer tiny grey words; controls sit 12 dp apart
+
 ## 1.3.0
 
 - Search: one search over your notes, journal entries and book highlights. Open it from Home with the search button, or swipe down on Home. A highlight opens the book at that place, a journal entry opens that day, and Back comes back to the results

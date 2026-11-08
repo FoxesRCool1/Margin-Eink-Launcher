@@ -35,6 +35,15 @@ object LogFormat {
         return day.isBefore(oldest)
     }
 
+    /**
+     * The crash files that are older than the newest [keep], oldest first.
+     * The names carry the time, so the newest are the last in name order.
+     */
+    fun crashFilesToDelete(names: List<String>, keep: Int = 5): List<String> =
+        names.filter { it.startsWith("crash-") && it.endsWith(".txt") }
+            .sorted()
+            .dropLast(keep)
+
     private fun dayOf(fileName: String): LocalDate? {
         if (!fileName.startsWith("log-") || !fileName.endsWith(".txt")) return null
         val text = fileName.removePrefix("log-").removeSuffix(".txt")

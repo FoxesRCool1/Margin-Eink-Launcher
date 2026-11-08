@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkDimens
+import io.github.foxesrcool1.margin.design.components.EinkSeparator
 import io.github.foxesrcool1.margin.design.EinkTheme
 import io.github.foxesrcool1.margin.design.EinkType
 import io.github.foxesrcool1.margin.design.components.CapsLabel
@@ -229,7 +232,8 @@ class InkNoteActivity : ComponentActivity() {
         current.start()
     }
 
-    private fun export(
+    /** The notice to show, once the file is written or the write failed. */
+    private suspend fun export(
         controller: InkNoteController,
         repository: InkNotesRepository,
         name: String,
@@ -237,17 +241,21 @@ class InkNoteActivity : ComponentActivity() {
     ): String {
         val note = controller.snapshot()
         val page = controller.pageIndex
-        lifecycleScope.launch(AppDispatchers.io) {
+        val written = withContext(AppDispatchers.io) {
             runCatching {
-                val written = if (asPdf) {
+                if (asPdf) {
                     repository.writeExport("$name.pdf", InkExport.notePdf(note))
                 } else {
                     repository.writeExport("$name page ${page + 1}.png", InkExport.pagePng(note, note.pages[page]))
                 }
-                AppLog.i(TAG, "Exported to $written")
-            }.onFailure { AppLog.e(TAG, "Export failed", it) }
+            }.onFailure { AppLog.e(TAG, "Export failed", it) }.getOrNull()
         }
-        return if (asPdf) "The PDF goes to the exports folder" else "The picture goes to the exports folder"
+        AppLog.i(TAG, "Exported to $written")
+        return when {
+            written == null -> "Could not export"
+            asPdf -> "The PDF is in the exports folder"
+            else -> "The picture is in the exports folder"
+        }
     }
 
     override fun onResume() {
@@ -306,6 +314,8 @@ internal fun VerticalRule() {
     Box(modifier = Modifier.fillMaxHeight().width(EinkDimens.hairline).background(EinkColors.Ink))
 }
 
+private const val SAVE_FAILED = "Could not save. Try again."
+
 @Composable
 internal fun InkNoteScreen(
     title: String,
@@ -315,7 +325,7 @@ internal fun InkNoteScreen(
     onCanvas: (InkCanvasView) -> Unit,
     onDialog: (open: Boolean) -> Unit,
     onWidth: (Float) -> Unit,
-    onExport: (asPdf: Boolean) -> String,
+    onExport: suspend (asPdf: Boolean) -> String,
     onClose: () -> Unit,
 ) {
     var canvas by remember { mutableStateOf<InkCanvasView?>(null) }
@@ -326,8 +336,17 @@ internal fun InkNoteScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var templatesOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var pendingTemplate by remember { mutableStateOf<PageTemplate?>(null) }
+    val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf(problem?.let { "This note could not be read and will not be changed: $it" }) }
+
+    DisposableEffect(controller) {
+        controller.onSaveFailed = { failed ->
+            if (failed) notice = SAVE_FAILED else if (notice == SAVE_FAILED) notice = null
+        }
+        onDispose { controller.onSaveFailed = null }
+    }
 
     fun refreshPages() {
         pageIndex = controller.pageIndex
@@ -368,8 +387,7 @@ internal fun InkNoteScreen(
                 icon = Lucide.FilePlus,
                 label = "Add a page",
                 onClick = {
-                    controller.addPage()
-                    refreshPages()
+                    if (controller.addPage()) refreshPages() else notice = "This note has the most pages it can keep"
                 },
             )
         }
@@ -406,12 +424,12 @@ internal fun InkNoteScreen(
             .background(EinkColors.Paper)
             .systemBarsPadding(),
     ) {
-        // Seven tools of 56 dp need a rail of 400 dp or a row of 408 dp. The
-        // shape of the room says which, unless that one does not fit and the
-        // other does: half of a split screen is wide and short upright, and
-        // narrow and tall on its side.
-        val railFits = maxHeight >= 400.dp
-        val rowFits = maxWidth >= 408.dp
+        // Seven tools of 56 dp with 12 dp between them need a rail of 472 dp
+        // or a row of 488 dp. The shape of the room says which, unless that
+        // one does not fit and the other does: half of a split screen is wide
+        // and short upright, and narrow and tall on its side.
+        val railFits = maxHeight >= EinkDimens.touchTarget * 7 + EinkDimens.targetGap * 6 + 8.dp
+        val rowFits = maxWidth >= EinkDimens.touchTarget * 7 + EinkDimens.targetGap * 6 + 16.dp
         val rails = if (maxWidth > maxHeight) railFits || !rowFits else !rowFits && railFits
         if (rails) {
             // On its side the tablet has width to spare and no height, so the
@@ -420,7 +438,7 @@ internal fun InkNoteScreen(
             Row(modifier = Modifier.fillMaxSize()) {
                 Column(
                     modifier = Modifier.fillMaxHeight().padding(4.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
                 ) { drawTools() }
                 VerticalRule()
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -445,7 +463,7 @@ internal fun InkNoteScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) { drawTools() }
                 Row(
@@ -454,7 +472,7 @@ internal fun InkNoteScreen(
                 ) {
                     pageTools()
                     CapsLabel(
-                        text = pageLabel + if (title.isBlank()) "" else "  .  $title",
+                        text = pageLabel + if (title.isBlank()) "" else "$EinkSeparator$title",
                         style = EinkType.capsSmall,
                         modifier = Modifier.weight(1f).padding(start = 8.dp),
                     )
@@ -475,8 +493,8 @@ internal fun InkNoteScreen(
             title = "Page ${pageIndex + 1}",
             options = listOf(
                 DialogOption("Page template", icon = Lucide.FileText) { menuOpen = false; templatesOpen = true },
-                DialogOption("Export this page as a picture", icon = Lucide.Image) { menuOpen = false; onDialog(false); notice = onExport(false) },
-                DialogOption("Export the note as a PDF", icon = Lucide.Share) { menuOpen = false; onDialog(false); notice = onExport(true) },
+                DialogOption("Export this page as a picture", icon = Lucide.Image) { menuOpen = false; onDialog(false); scope.launch { notice = onExport(false) } },
+                DialogOption("Export the note as a PDF", icon = Lucide.Share) { menuOpen = false; onDialog(false); scope.launch { notice = onExport(true) } },
                 DialogOption("Clear this page", icon = Lucide.Eraser) { menuOpen = false; confirmClear = true },
                 DialogOption("Delete this page", icon = Lucide.Trash2) { menuOpen = false; confirmDelete = true },
             ),
@@ -489,12 +507,27 @@ internal fun InkNoteScreen(
             title = "Page template",
             options = PageTemplate.entries.map { template ->
                 DialogOption(template.label) {
-                    controller.changeTemplate(template)
                     templatesOpen = false
-                    onDialog(false)
+                    // The template is the same on every page, so it is worth a question.
+                    if (template == controller.template) {
+                        onDialog(false)
+                    } else {
+                        pendingTemplate = template
+                    }
                 }
             },
             onDismiss = { templatesOpen = false; onDialog(false) },
+        )
+    }
+
+    pendingTemplate?.let { next ->
+        ConfirmDialog(
+            title = "Change the template on every page?",
+            message = "All ${pageCount} pages get the ${next.label} template. The ink stays.",
+            confirmText = "Change",
+            cancelText = "Cancel",
+            onConfirm = { controller.changeTemplate(next); pendingTemplate = null; onDialog(false) },
+            onDismiss = { pendingTemplate = null; onDialog(false) },
         )
     }
 
@@ -512,8 +545,8 @@ internal fun InkNoteScreen(
     if (confirmDelete) {
         ConfirmDialog(
             title = "Delete this page?",
-            message = "The page and its ink go for good.",
-            confirmText = "Delete",
+            message = if (pageCount == 1) "This is the only page. Clear it?" else "The page and its ink go for good.",
+            confirmText = if (pageCount == 1) "Clear" else "Delete",
             cancelText = "Keep",
             onConfirm = { controller.deletePage(); refreshPages(); confirmDelete = false; onDialog(false) },
             onDismiss = { confirmDelete = false; onDialog(false) },

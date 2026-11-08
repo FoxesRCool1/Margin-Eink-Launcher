@@ -32,10 +32,14 @@ import io.github.foxesrcool1.margin.core.eink.EinkDevice
 import io.github.foxesrcool1.margin.core.eink.EinkDevices
 import io.github.foxesrcool1.margin.core.eink.FastPenPath
 import io.github.foxesrcool1.margin.core.eink.ScreenRefresh
+import io.github.foxesrcool1.margin.core.habits.DayBoundary
+import io.github.foxesrcool1.margin.core.habits.HabitsRepository
+import io.github.foxesrcool1.margin.core.journal.JournalGoal
 import io.github.foxesrcool1.margin.core.launcher.DefaultLauncher
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.settings.WindowSettings
+import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
 import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.core.window.findActivity
@@ -105,6 +109,14 @@ fun SettingsScreen(
     val fullRefresh by settings.fullRefreshOnBigChange.collectAsStateWithLifecycle(initialValue = false)
     val fastPen by settings.fastPenMode.collectAsStateWithLifecycle(initialValue = SettingsStore.FAST_PEN_OFF)
     val inkDelay by settings.inkRedrawDelayMillis.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_INK_DELAY_MILLIS)
+    val journalGoal by settings.journalGoal.collectAsStateWithLifecycle(initialValue = 0)
+
+    // The day boundary lives in the habits file, read once off the main thread.
+    val habitsData = remember(context) { DataRoot.repository(context) }
+    var dayBoundary by remember { mutableIntStateOf(DayBoundary.DEFAULT_HOUR) }
+    LaunchedEffect(Unit) {
+        dayBoundary = withContext(AppDispatchers.io) { HabitsRepository(habitsData).load().dayBoundaryHour }
+    }
 
     // Which fast pen modes closed the app. Read from a small file each time
     // the Pen tab opens, off the main thread.
@@ -235,6 +247,43 @@ fun SettingsScreen(
                     onClick = { context.findActivity()?.let(ScreenRefresh::run) },
                 ),
             )
+            add(
+                Setting(
+                    title = "Daily Word Goal",
+                    icon = Lucide.PenLine,
+                    value = if (journalGoal == 0) "Off" else "$journalGoal",
+                    onClick = {
+                        choice = Choice(
+                            title = "Daily Word Goal",
+                            options = JournalGoal.STEPS.map { words ->
+                                (if (words == 0) "Off" else "$words") to { scope.launch { settings.setJournalGoal(words) } }
+                            },
+                            current = JournalGoal.STEPS.indexOf(journalGoal),
+                        )
+                    },
+                ),
+            )
+            add(
+                Setting(
+                    title = "Day Boundary",
+                    icon = Lucide.History,
+                    value = dayBoundaryLabel(dayBoundary),
+                    onClick = {
+                        choice = Choice(
+                            title = "Day Boundary",
+                            options = (0..6).map { hour ->
+                                dayBoundaryLabel(hour) to {
+                                    scope.launch {
+                                        withContext(AppDispatchers.io) { HabitsRepository(habitsData).setDayBoundaryHour(hour) }
+                                        dayBoundary = hour
+                                    }
+                                }
+                            },
+                            current = dayBoundary,
+                        )
+                    },
+                ),
+            )
         }
 
         SettingsTab.Pen -> buildList {
@@ -302,20 +351,22 @@ fun SettingsScreen(
                     },
                 ),
             )
-            add(
-                Setting(
-                    title = "Device Test",
-                    icon = Lucide.Wrench,
-                    trailing = Lucide.ChevronRight,
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(context, io.github.foxesrcool1.margin.ui.devicetest.DeviceTestActivity::class.java),
-                            )
-                        }.onFailure { AppLog.e(TAG, "Could not open the device test", it) }
-                    },
-                ),
-            )
+            if (BuildConfig.DEBUG) {
+                add(
+                    Setting(
+                        title = "Device Test",
+                        icon = Lucide.Wrench,
+                        trailing = Lucide.ChevronRight,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(context, io.github.foxesrcool1.margin.ui.devicetest.DeviceTestActivity::class.java),
+                                )
+                            }.onFailure { AppLog.e(TAG, "Could not open the device test", it) }
+                        },
+                    ),
+                )
+            }
         }
 
         SettingsTab.Files -> listOf(
@@ -406,7 +457,7 @@ fun SettingsScreen(
                 if (status != null) {
                     CapsLabel(
                         text = status.orEmpty(),
-                        style = EinkType.capsSmall.copy(color = EinkColors.Faded),
+                        style = EinkType.capsSmall.copy(color = EinkColors.Ink),
                         maxLines = 2,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -421,10 +472,10 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        EinkIcon(icon = Lucide.HardDrive, size = 18.dp, color = EinkColors.Faded)
+                        EinkIcon(icon = Lucide.HardDrive, size = 18.dp, color = EinkColors.Ink)
                         EinkText(
                             text = storage.folderPath.removePrefix("/storage/emulated/0/"),
-                            style = EinkType.help.copy(color = EinkColors.Faded),
+                            style = EinkType.help.copy(color = EinkColors.Ink),
                             maxLines = 2,
                         )
                     }
@@ -451,7 +502,7 @@ fun SettingsScreen(
             message = asking.message,
             onDismiss = { choice = null },
             options = asking.options.mapIndexed { index, (label, pick) ->
-                DialogOption(label = label, icon = if (index == asking.current) Lucide.Check else Lucide.Minus) {
+                DialogOption(label = label, icon = if (index == asking.current) Lucide.CircleCheck else Lucide.Circle) {
                     pick()
                     choice = null
                 }
@@ -575,3 +626,6 @@ private fun openSettingsOrSteps(
     showSteps()
     return "Follow the steps"
 }
+
+/** The day boundary hour as the Settings row and its dialog show it. */
+internal fun dayBoundaryLabel(hour: Int): String = if (hour == 0) "Midnight" else "$hour AM"

@@ -33,7 +33,7 @@ object ApkCheck {
     private const val TAG = "ApkCheck"
 
     /** The rules, with no Android class in them, so a plain test covers them. */
-    fun judge(archive: ApkFacts?, installed: ApkFacts): ApkVerdict {
+    fun judge(archive: ApkFacts?, installed: ApkFacts, expectedCode: Long? = null): ApkVerdict {
         if (archive == null) return ApkVerdict.Refused("The file is not an Android app.")
 
         if (archive.packageName != installed.packageName) {
@@ -43,6 +43,9 @@ object ApkCheck {
             return ApkVerdict.Refused(
                 "This is an older version.",
             )
+        }
+        if (expectedCode != null && archive.versionCode != expectedCode) {
+            return ApkVerdict.Refused("This file is not the version it was published as.")
         }
         val theirs = archive.signers
         val ours = installed.signers
@@ -54,7 +57,7 @@ object ApkCheck {
         return ApkVerdict.Ok
     }
 
-    fun inspect(context: Context, apk: File): ApkVerdict {
+    fun inspect(context: Context, apk: File, expectedCode: Long? = null): ApkVerdict {
         val packages = context.packageManager
         val archive = runCatching {
             packages.getPackageArchiveInfo(apk.absolutePath, SIGNER_FLAGS)?.let(::factsOf)
@@ -66,7 +69,7 @@ object ApkCheck {
             // Without this there is nothing to compare with. Let Android decide.
             ?: return ApkVerdict.Ok
 
-        val verdict = judge(archive, installed)
+        val verdict = judge(archive, installed, expectedCode)
         AppLog.i(TAG, "Downloaded: $archive. Installed: $installed. Verdict: $verdict")
         return verdict
     }

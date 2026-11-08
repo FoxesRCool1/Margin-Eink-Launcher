@@ -6,9 +6,8 @@ would change in the app.
 
 Before you send it: the fast pen list at ViWoods is kept by package name. The
 package name in the letter is `io.github.foxesrcool1.margin`, which is
-still the suggestion from step 1. If the app will get another name or package
-before many people use it, choose it first. An entry on ViWoods' list for the old name
-would be of no use.
+fixed by decision 0021 and will not change. An entry on ViWoods' list under any
+other package name would be of no use.
 
 ---
 

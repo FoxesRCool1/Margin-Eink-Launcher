@@ -224,7 +224,8 @@ class PdfReaderActivity : ComponentActivity() {
     private fun openBook() {
         val started = System.currentTimeMillis()
         val file = File(DataRoot.folder(this), RelativePaths.normalise(bookPath))
-        val opened = PdfPages.open(file)
+        val missing = !file.exists()
+        val opened = if (missing) null else PdfPages.open(file)
         val loaded = reading.load(bookId)
         val hour = runCatching { HabitsRepository(DataRoot.repository(this)).load().dayBoundaryHour }
             .getOrDefault(DayBoundary.DEFAULT_HOUR)
@@ -238,7 +239,7 @@ class PdfReaderActivity : ComponentActivity() {
             if (opened == null || opened.pageCount == 0) {
                 opened?.close()
                 ui.loading = false
-                ui.failure = "This PDF is locked or damaged."
+                ui.failure = if (missing) "The book file is missing" else "This PDF is locked or damaged."
                 return@post
             }
             pages = opened
@@ -283,47 +284,73 @@ class PdfReaderActivity : ComponentActivity() {
         if (needInk) saveInk()
 
         worker.execute {
-            if (mine != request) return@execute
-            val started = SystemClock.elapsedRealtime()
-            val whole = source.pageBox(pageIndex)
-            val content = if (crop) source.contentBox(pageIndex) else whole
-            val screens = PdfViewport.screens(content, width, height, zoom)
-            val screen = when {
-                keepPlace != null -> PdfViewport.screenNearest(screens, keepPlace)
-                wantLast -> screens.size - 1
-                else -> wantedScreen.coerceIn(0, screens.size - 1)
-            }
-            val part = screens[screen]
-            val picture = source.render(pageIndex, part, width, height)
-            val pageInk = if (needInk) ink.load(pageIndex + 1) else null
-            val took = SystemClock.elapsedRealtime() - started
-
-            main.post {
-                if (mine != request || isDestroyed) {
-                    picture?.recycle()
-                    return@post
+            runCatching {
+                if (mine != request) return@runCatching
+                val started = SystemClock.elapsedRealtime()
+                val whole = source.pageBox(pageIndex)
+                if (whole == null) {
+                    main.post {
+                        if (mine == request && !isDestroyed) ui.notice = "This page could not be shown"
+                    }
+                    return@runCatching
                 }
-                if (took > 400) AppLog.i(TAG, "Page ${pageIndex + 1} screen ${screen + 1} took $took ms")
-
-                if (pageInk != null) {
-                    // Strokes drawn on the old page while this one rendered are still in the canvas. Save them before setPage replaces the editor.
-                    saveInk()
-                    val strokes = (pageInk as? PageInkLoad.Loaded)?.strokes ?: emptyList()
-                    inkWritable = pageInk is PageInkLoad.Loaded
-                    if (!inkWritable) ui.notice = "Old ink is unreadable. New ink is not saved."
-                    view.unitScale = whole.width / InkNote.DEFAULT_PAGE_WIDTH
-                    view.setPage(strokes, whole.width, whole.height, PageTemplate.Blank)
-                    inkPage = pageIndex
-                    inkDirty = false
+                val content = if (crop) source.contentBox(pageIndex) ?: whole else whole
+                val screens = PdfViewport.screens(content, width, height, zoom)
+                val screen = when {
+                    keepPlace != null -> PdfViewport.screenNearest(screens, keepPlace)
+                    wantLast -> screens.size - 1
+                    else -> wantedScreen.coerceIn(0, screens.size - 1)
                 }
-                view.showPart(RectF(part.left, part.top, part.right, part.bottom), picture)
-                shown?.takeIf { it !== picture }?.recycle()
-                shown = picture
-                currentPart = part
-                wantLastScreen = false
-                ui.screenIndex = screen
-                ui.screenCount = screens.size
-                savePositionSoon()
+                val part = screens[screen]
+                val picture = source.render(pageIndex, part, width, height)
+                val pageInk = if (needInk) ink.load(pageIndex + 1) else null
+                val took = SystemClock.elapsedRealtime() - started
+
+                main.post {
+                    if (mine != request || isDestroyed) {
+                        picture?.recycle()
+                        return@post
+                    }
+                    if (took > 400) AppLog.i(TAG, "Page ${pageIndex + 1} screen ${screen + 1} took $took ms")
+
+                    if (pageInk != null) {
+                        // Strokes drawn on the old page while this one rendered are still in the canvas. Save them before setPage replaces the editor.
+                        saveInk()
+                        val loaded = (pageInk as? PageInkLoad.Loaded)?.strokes ?: emptyList()
+                        // With no page attached yet (the first screen, or a new
+                        // canvas after a turn or a split change), anything in the
+                        // editor was drawn on this page while its ink loaded.
+                        // Keep it on top of the loaded ink, or it would vanish.
+                        val fresh = if (inkPage < 0) view.editor.strokes else emptyList()
+                        inkWritable = pageInk is PageInkLoad.Loaded
+                        if (!inkWritable) ui.notice = "Old ink is unreadable. New ink is not saved."
+                        view.unitScale = whole.width / InkNote.DEFAULT_PAGE_WIDTH
+                        view.setPage(loaded + fresh, whole.width, whole.height, PageTemplate.Blank)
+                        inkPage = pageIndex
+                        inkDirty = fresh.isNotEmpty()
+                    }
+                    if (picture == null) {
+                        // The page could not be drawn. Leave what is on the canvas as it is.
+                        ui.notice = "This page could not be drawn"
+                        return@post
+                    }
+                    view.showPart(RectF(part.left, part.top, part.right, part.bottom), picture)
+                    shown?.takeIf { it !== picture }?.recycle()
+                    shown = picture
+                    currentPart = part
+                    wantLastScreen = false
+                    ui.screenIndex = screen
+                    ui.screenCount = screens.size
+                    // Only the messages about a page that failed go away here. The
+                    // warnings about unreadable notes and ink must stay.
+                    if (ui.notice?.startsWith("This page could not") == true) ui.notice = null
+                    savePositionSoon()
+                }
+            }.onFailure {
+                AppLog.e(TAG, "Could not show page ${pageIndex + 1}", it)
+                main.post {
+                    if (mine == request && !isDestroyed) ui.notice = "This page could not be shown"
+                }
             }
         }
     }
@@ -524,8 +551,12 @@ class PdfReaderActivity : ComponentActivity() {
             if (panel == PdfPanel.InkPages) {
                 saveInk()
                 worker.execute {
-                    val list = ink.annotatedPages()
-                    main.post { ui.inkPages = list }
+                    val result = runCatching { ink.annotatedPages() }
+                        .onFailure { AppLog.e(TAG, "Could not read the ink pages", it) }
+                    main.post {
+                        ui.inkPages = result.getOrDefault(emptyList())
+                        ui.notice = if (result.isFailure) "Could not read the ink pages" else null
+                    }
                 }
             }
         }
@@ -541,7 +572,7 @@ class PdfReaderActivity : ComponentActivity() {
             startFastPen()
             worker.execute {
                 val written = runCatching {
-                    val whole = source.pageBox(pageIndex)
+                    val whole = source.pageBox(pageIndex) ?: return@runCatching null
                     val scale = EXPORT_WIDTH / whole.width
                     val picture = source.render(pageIndex, whole, EXPORT_WIDTH.toInt(), (whole.height * scale).toInt() + 1)
                     val note = InkNote(whole.width, whole.height, PageTemplate.Blank)
@@ -566,8 +597,11 @@ class PdfReaderActivity : ComponentActivity() {
                 val path = data.freePath(
                     RelativePaths.join(StorageLayout.EXPORTS, "${StorageLayout.safeName(title.ifBlank { "pdf" })} notes.md"),
                 )
-                val ok = data.store.writeText(path, ink.markdown(title))
-                main.post { ui.notice = if (ok) "Saved as $path" else "The export did not work" }
+                val text = runCatching { ink.markdown(title) }
+                    .onFailure { AppLog.e(TAG, "Could not export the notes", it) }
+                    .getOrNull()
+                val ok = text != null && data.store.writeText(path, text)
+                main.post { ui.notice = if (ok) "Saved as $path" else "Could not export the notes" }
             }
         }
     }

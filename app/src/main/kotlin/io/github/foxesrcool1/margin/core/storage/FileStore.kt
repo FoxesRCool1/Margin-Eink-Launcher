@@ -71,9 +71,9 @@ interface FileStore {
     /**
      * Writes the whole file, or leaves the old one alone.
      *
-     * The write goes to a temporary file next to the target and is renamed
-     * over it. A tablet that loses power in the middle then still has the
-     * last good version, instead of half a note.
+     * The write goes to a temporary file next to the target. The new data is
+     * synced to disk before the rename, so after a power loss the file is
+     * either the old version or the new one, never empty or half written.
      */
     fun write(relativePath: String, bytes: ByteArray): Boolean
 
@@ -95,6 +95,9 @@ interface FileStore {
 
     /** Streams a file out, for a backup or an export. */
     fun copyTo(relativePath: String, output: OutputStream): Boolean
+
+    /** Deletes temporary files left by a crashed write (names ending in .part-<digits>) that are older than the given age, returns how many were deleted. */
+    fun sweepLeftovers(olderThanMillis: Long): Int = 0
 }
 
 /** Thrown when a path would leave the data root. */

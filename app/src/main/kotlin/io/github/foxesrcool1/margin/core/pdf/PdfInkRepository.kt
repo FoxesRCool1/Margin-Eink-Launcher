@@ -64,7 +64,7 @@ class PdfInkRepository(private val data: DataRepository, private val bookId: Str
             .filter { !it.isDirectory && it.name.startsWith("page-") && it.name.endsWith(".strokes") }
             .mapNotNull { entry ->
                 val number = entry.name.removePrefix("page-").removeSuffix(".strokes").toIntOrNull()
-                    ?: return@mapNotNull null
+                    ?.takeIf { it >= 1 } ?: return@mapNotNull null
                 val strokes = (load(number) as? PageInkLoad.Loaded)?.strokes ?: return@mapNotNull null
                 if (strokes.isEmpty()) null else AnnotatedPage(number, strokes.size)
             }

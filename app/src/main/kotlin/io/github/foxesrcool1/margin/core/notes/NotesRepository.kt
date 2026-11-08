@@ -49,7 +49,9 @@ class NotesRepository(private val data: DataRepository) {
      * was a second trip to the disk for each note and a second repaint of
      * each row.
      */
-    fun list(folderPath: String): List<NoteEntry> = data.store.list(folderPath).map(::describe)
+    fun list(folderPath: String): List<NoteEntry> = data.store.list(folderPath)
+        .filter { it.isDirectory || !it.name.contains(".unreadable") }
+        .map(::describe)
 
     private fun describe(stored: StoredEntry): NoteEntry = when {
         stored.isDirectory -> NoteEntry(stored, stored.name)

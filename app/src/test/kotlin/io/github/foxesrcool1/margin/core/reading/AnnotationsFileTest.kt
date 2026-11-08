@@ -1,10 +1,12 @@
 package io.github.foxesrcool1.margin.core.reading
 
+import io.github.foxesrcool1.margin.core.books.BooksRepository
 import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.json.jsonOf
 import io.github.foxesrcool1.margin.core.settings.ReaderSettings
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
+import io.github.foxesrcool1.margin.core.storage.StorageLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -13,7 +15,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.LocalDate
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class AnnotationsFileTest {
 
@@ -24,6 +30,27 @@ class AnnotationsFileTest {
 
     private val early = Highlight("h1", locator("ch1.xhtml"), "I went to the woods", progression = 0.1, chapter = "Economy")
     private val late = Highlight("h2", locator("ch9.xhtml"), "to live deliberately", note = "Why I read this", progression = 0.8, chapter = "Conclusion")
+
+    private fun epub(title: String): ByteArray {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write(
+                """<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                  </container>""".toByteArray(),
+            )
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("content.opf"))
+            zip.write(
+                """<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1"><dc:title>$title</dc:title></metadata>
+                  </package>""".toByteArray(),
+            )
+            zip.closeEntry()
+        }
+        return out.toByteArray()
+    }
 
     @Test
     fun `annotations survive a round trip`() {
@@ -102,6 +129,58 @@ class AnnotationsFileTest {
         reading.save("walden-1", BookAnnotations(title = "Walden", progress = 0.5))
         assertEquals(0.5, reading.progressOf("walden-1"), 0.0)
         assertEquals("{ broken", store.readText("annotations/walden-1.unreadable.json"))
+    }
+
+    @Test
+    fun `the last opened stamp survives a round trip`() {
+        val before = BookAnnotations(title = "Walden", progress = 0.42, lastOpened = 1_700_000_000_000L)
+        val after = AnnotationsFile.parse(AnnotationsFile.serialise(before))
+        assertEquals(1_700_000_000_000L, after?.lastOpened)
+    }
+
+    @Test
+    fun `a file without the stamp reads as unknown, not as the epoch`() {
+        val parsed = AnnotationsFile.parse("""{"version": 1, "title": "Walden"}""")
+        assertEquals(0L, parsed?.lastOpened)
+    }
+
+    @Test
+    fun `saving a book stamps the time it was last opened`() {
+        val store = LocalFileStore(temporary.newFolder("Margin3"))
+        val reading = ReadingRepository(DataRepository(store).also { it.ensureFolders() })
+        assertTrue(reading.save("walden-1", BookAnnotations(title = "Walden", progress = 0.5)))
+        val saved = AnnotationsFile.parse(store.readText("annotations/walden-1.json")!!)
+        assertTrue(saved!!.lastOpened > 0L)
+    }
+
+    @Test
+    fun `the book read last comes first, not the file restored last`() {
+        val root = temporary.newFolder("Margin4")
+        val store = LocalFileStore(root)
+        val books = BooksRepository(DataRepository(store))
+        store.write("books/older.epub", epub("Read first"))
+        store.write("books/younger.epub", epub("Read second"))
+        val older = books.list().single { it.metadata.title == "Read first" }
+        val younger = books.list().single { it.metadata.title == "Read second" }
+        // The reader saved the place in each book, and the stamp says which
+        // came last.
+        store.writeText(
+            StorageLayout.annotationsPath(older.bookId),
+            AnnotationsFile.serialise(BookAnnotations(title = "Read first", progress = 0.3, lastOpened = 1_000_000_000_000L)),
+        )
+        store.writeText(
+            StorageLayout.annotationsPath(younger.bookId),
+            AnnotationsFile.serialise(BookAnnotations(title = "Read second", progress = 0.7, lastOpened = 2_000_000_000_000L)),
+        )
+        // A restore gave every file the same new date, and the newer stamp
+        // sits in the older file. The stamp must win.
+        File(root, StorageLayout.annotationsPath(older.bookId)).setLastModified(1_000_000_300_000L)
+        File(root, StorageLayout.annotationsPath(younger.bookId)).setLastModified(1_000_000_300_000L)
+
+        assertEquals(
+            listOf("Read second", "Read first"),
+            books.recentlyRead(2).map { it.first.metadata.title },
+        )
     }
 
     @Test

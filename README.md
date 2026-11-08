@@ -82,12 +82,12 @@ Markdown. Handwritten notes are zip files with the strokes and a PNG of each
 page.
 
 **If you uninstall Margin, Android deletes this folder.** Back up first:
-Settings, Files, Back Up. It saves everything in one zip file.
+Settings, Files, Back Up. It saves your books, notes, journal, habits, app folders and settings in one zip file.
 
 ## Privacy
 
 No account, no tracking, no ads. The app goes online for one thing only:
-when you press "Check for updates". A book cannot go online at all.
+when Settings, About, Updates checks when it opens; the refresh icon checks again. A book cannot go online at all.
 
 Every file on the releases page is signed with the release key of this
 project. The key fingerprint is in [`docs/RELEASING.md`](docs/RELEASING.md).

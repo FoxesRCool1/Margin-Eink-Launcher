@@ -8,6 +8,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import io.github.foxesrcool1.margin.design.LocalEinkTextStyle
 
+/** Between the pieces of a status line. Screen readers read a spaced full stop as "period", so give such a Text a contentDescription that joins the pieces with ", ". */
+const val EinkSeparator = " · "
+
 /**
  * Text.
  *

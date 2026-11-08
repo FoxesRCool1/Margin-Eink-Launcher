@@ -62,18 +62,23 @@ fun PdfReaderScreen(state: PdfUiState, actions: PdfActions) {
             .background(EinkColors.Paper)
             .systemBarsPadding(),
     ) {
-        // Seven tools of 56 dp stand in a rail of 400 dp, or in a row of 464
-        // dp with the icon that turns the screen. Whichever the shape of the
-        // room asks for, unless it does not fit and the other one does.
-        val railFits = maxHeight >= 400.dp
-        val rowFits = maxWidth >= 464.dp
+        // Seven tools of 56 dp with 12 dp between them, plus the 4 dp
+        // padding of the rail, stand in a rail 472 dp tall. The row holds the
+        // same seven tools and the button that turns the screen: eight
+        // buttons, seven gaps and 8 dp of padding on each side, 548 dp wide.
+        // Whichever the shape of the room asks for, unless it does not fit
+        // and the other one does.
+        val railSpan = EinkDimens.touchTarget * 7 + EinkDimens.targetGap * 6 + 8.dp
+        val rowSpan = EinkDimens.touchTarget * 8 + EinkDimens.targetGap * 7 + 16.dp
+        val railFits = maxHeight >= railSpan
+        val rowFits = maxWidth >= rowSpan
         val rail = if (maxWidth > maxHeight) railFits || !rowFits else !rowFits && railFits
 
         val tools: @Composable () -> Unit = {
             IconPressButton(icon = Lucide.X, label = "Close the book", onClick = actions::close)
             InkModeButtons(mode = state.mode, onPick = actions::pick)
             IconPressButton(icon = Lucide.Undo2, label = "Undo", onClick = actions::undo)
-            IconPressButton(icon = Lucide.ZoomIn, label = "Zoom: ${state.zoom.label}", onClick = actions::nextZoom)
+            IconPressButton(icon = Lucide.Redo2, label = "Redo", onClick = actions::redo)
             IconPressButton(icon = Lucide.Ellipsis, label = "More", onClick = { actions.show(PdfPanel.More) })
         }
         val status: @Composable (Modifier) -> Unit = { statusModifier ->
@@ -106,7 +111,7 @@ fun PdfReaderScreen(state: PdfUiState, actions: PdfActions) {
             Row(modifier = Modifier.fillMaxSize()) {
                 Column(
                     modifier = Modifier.fillMaxHeight().padding(4.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
                 ) { tools() }
                 VerticalRule()
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -128,7 +133,7 @@ fun PdfReaderScreen(state: PdfUiState, actions: PdfActions) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(EinkDimens.targetGap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     tools()
@@ -175,9 +180,9 @@ fun PdfReaderScreen(state: PdfUiState, actions: PdfActions) {
             onDismiss = { actions.show(PdfPanel.None) },
             options = listOf(
                 DialogOption("Go to page", icon = Lucide.Search) { actions.show(PdfPanel.GoTo) },
+                DialogOption("Zoom: ${state.zoom.label}", icon = Lucide.ZoomIn) { actions.nextZoom() },
                 DialogOption(if (state.cropMargins) "Show the whole page" else "Crop the margins", icon = Lucide.Crop) { actions.toggleCrop() },
                 DialogOption("Pen width: ${PenWidths.label(state.penWidth)}", icon = Lucide.PenLine) { actions.nextPenWidth() },
-                DialogOption("Redo", icon = Lucide.Redo2) { actions.redo(); actions.show(PdfPanel.None) },
                 DialogOption("Pages with handwriting", icon = Lucide.Signature) { actions.show(PdfPanel.InkPages) },
                 DialogOption("Export this page as a picture", icon = Lucide.Image) { actions.exportPage() },
             ) + if (io.github.foxesrcool1.margin.core.eink.DevEnvironment.fingerDraws) {
@@ -251,7 +256,7 @@ private fun InkPagesDialog(state: PdfUiState, actions: PdfActions) {
                     EinkText(text = "Page ${page.pageNumber}", style = EinkType.rowTitle.copy(color = colour), maxLines = 1)
                     CapsLabel(
                         text = "${page.strokeCount} pen strokes",
-                        style = EinkType.capsSmall.copy(color = if (pressed) EinkColors.Paper else EinkColors.Faded),
+                        style = EinkType.capsSmall.copy(color = if (pressed) EinkColors.Paper else EinkColors.Ink),
                     )
                 }
                 HairlineDivider(color = EinkColors.Faded)

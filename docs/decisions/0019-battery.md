@@ -34,7 +34,7 @@ read the debug build too, because that is the build on the tablet.
 
 - No timers, no polling loops, no alarms, no jobs, no wake locks. The wake
   lock permission that Readium brings is removed in the manifest.
-- The network is used only when the user presses "Check for updates".
+- The network is used only when Settings, About, Updates checks when it opens; the refresh icon checks again.
 - Battery and Wi-Fi on Home are read once a minute, with the clock.
 - The fast pen is stopped whenever a screen with ink goes to the back, so the
   panel is never left in the pen mode.

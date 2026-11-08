@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.core.json.JsonObject
@@ -65,7 +66,7 @@ class ReaderChromeScreenshotTest {
     private fun state(panel: ReaderPanel) = ReaderUiState().apply {
         loading = false
         title = "Walden"
-        placeLabel = "12%  .  position 31  .  Economy"
+        placeLabel = "12% · position 31 · Economy"
         secondsToday = 18 * 60
         this.panel = panel
         annotations = BookAnnotations(
@@ -100,4 +101,16 @@ class ReaderChromeScreenshotTest {
 
     @Test
     fun selection() = shoot("reader_selection", state(ReaderPanel.None).apply { selecting = true })
+
+    @Test
+    fun noticeStrip() {
+        shoot("reader_notice_strip", state(ReaderPanel.None).apply { notice = "No dictionary app found" })
+        compose.onNodeWithText("NO DICTIONARY APP FOUND").assertExists()
+    }
+
+    @Test
+    fun warningStrip() {
+        shoot("reader_warning_strip", state(ReaderPanel.None).apply { warning = "Old notes are unreadable. Nothing new is saved." })
+        compose.onNodeWithText("OLD NOTES ARE UNREADABLE. NOTHING NEW IS SAVED.").assertExists()
+    }
 }

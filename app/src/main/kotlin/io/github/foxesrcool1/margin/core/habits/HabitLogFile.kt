@@ -13,6 +13,9 @@ object HabitLogFile {
 
     const val HEADER = "date,habit"
 
+    /** The byte order mark some editors put at the start of a saved file. */
+    private val BYTE_ORDER_MARK = Char(0xFEFF).toString()
+
     fun serialise(marks: Collection<HabitMark>): String = buildString {
         append(HEADER).append('\n')
         marks
@@ -27,25 +30,45 @@ object HabitLogFile {
      * Reads the file back. A line that makes no sense is dropped, not fatal:
      * one bad line must not cost the user the whole history.
      */
-    fun parse(text: String): List<HabitMark> {
-        val marks = mutableListOf<HabitMark>()
+    fun parse(text: String): List<HabitMark> = parseCounting(text).first
 
-        text.lineSequence().forEachIndexed { index, rawLine ->
+    /**
+     * Like [parse], and also says how many lines were left out. A byte order
+     * mark at the start of the text is skipped, so the header still counts as one.
+     */
+    fun parseCounting(text: String): Pair<List<HabitMark>, Int> {
+        val marks = mutableListOf<HabitMark>()
+        var dropped = 0
+
+        var headerChecked = false
+        text.removePrefix(BYTE_ORDER_MARK).lineSequence().forEach { rawLine ->
             val line = rawLine.trim()
-            if (line.isEmpty()) return@forEachIndexed
-            if (index == 0 && line.equals(HEADER, ignoreCase = true)) return@forEachIndexed
+            if (line.isEmpty()) return@forEach
+            val isFirstLine = !headerChecked
+            headerChecked = true
+            if (isFirstLine && line.equals(HEADER, ignoreCase = true)) return@forEach
 
             val fields = splitLine(line)
-            if (fields.size < 2) return@forEachIndexed
+            if (fields.size < 2) {
+                dropped++
+                return@forEach
+            }
 
             val date = runCatching { LocalDate.parse(fields[0]) }.getOrNull()
-                ?: return@forEachIndexed
-            val habitId = fields[1].takeIf { it.isNotBlank() } ?: return@forEachIndexed
+            if (date == null) {
+                dropped++
+                return@forEach
+            }
+            val habitId = fields[1].takeIf { it.isNotBlank() }
+            if (habitId == null) {
+                dropped++
+                return@forEach
+            }
 
             marks += HabitMark(habitId, date)
         }
 
-        return marks.distinct()
+        return marks.distinct() to dropped
     }
 
     /** The days on which one habit was done. */

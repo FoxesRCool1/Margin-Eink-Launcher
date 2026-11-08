@@ -32,8 +32,10 @@ const val LITERATA_ASSET = "literata.ttf"
 /** Opens an EPUB file with the Readium toolkit. */
 object EpubOpener {
 
+    /** One client for the life of the process: the retriever and the parser share it. */
+    private val httpClient by lazy { DefaultHttpClient() }
+
     suspend fun open(context: Context, file: File): Publication? {
-        val httpClient = DefaultHttpClient()
         val retriever = AssetRetriever(context.contentResolver, httpClient)
         val asset = retriever.retrieve(file).getOrElse {
             AppLog.e(TAG, "Could not read ${file.name}: $it")

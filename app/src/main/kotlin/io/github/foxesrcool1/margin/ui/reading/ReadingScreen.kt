@@ -180,7 +180,7 @@ fun ReadingScreen(
         if (status != null) {
             CapsLabel(
                 text = status.orEmpty(),
-                style = EinkType.capsSmall.copy(color = EinkColors.Faded),
+                style = EinkType.capsSmall.copy(color = EinkColors.Ink),
                 maxLines = 2,
             )
         }
@@ -255,7 +255,7 @@ private fun BookRow(
 ) {
     EinkRow(onClick = onOpen, onLongClick = onOptions) { pressed ->
         val foreground = if (pressed) EinkColors.Paper else EinkColors.Ink
-        val faded = if (pressed) EinkColors.Paper else EinkColors.Faded
+        val faded = if (pressed) EinkColors.Paper else EinkColors.Ink
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {

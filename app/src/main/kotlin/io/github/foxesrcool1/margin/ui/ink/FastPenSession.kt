@@ -113,8 +113,6 @@ class FastPenSession(
         canvas.settle()
     }
 
-    val isRunning: Boolean get() = running
-
     private fun screenBox(view: View): Rect {
         val corner = IntArray(2)
         view.getLocationOnScreen(corner)

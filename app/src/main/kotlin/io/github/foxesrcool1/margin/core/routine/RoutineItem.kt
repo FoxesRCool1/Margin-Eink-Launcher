@@ -24,6 +24,16 @@ data class RoutineItem(
 
     val opensAnApp: Boolean get() = target.startsWith(APP_PREFIX)
 
+    /** A short name for the target, for the picker and the list. Null when there is none. */
+    val targetLabel: String?
+        get() = when (target) {
+            "read" -> "Read"
+            "write" -> "Write"
+            "journal" -> "Journal"
+            "apps" -> "Apps"
+            else -> if (appComponent() != null) "App" else null
+        }
+
     /** The component of the app to open, or null. */
     fun appComponent(): Pair<String, String>? {
         if (!opensAnApp) return null

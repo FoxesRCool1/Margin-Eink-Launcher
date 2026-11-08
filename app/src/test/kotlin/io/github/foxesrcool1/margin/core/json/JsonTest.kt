@@ -144,6 +144,30 @@ class JsonTest {
     }
 
     @Test
+    fun `a leading byte order mark is skipped`() {
+        assertEquals(Json.parse("{\"a\":1}"), Json.parse("\uFEFF{\"a\":1}"))
+    }
+
+    @Test
+    fun `a byte order mark in the middle is refused`() {
+        assertNull(Json.parseOrNull("{\"a\":\uFEFF1}"))
+    }
+
+    @Test
+    fun `a number that is not finite is refused`() {
+        assertNull(Json.parseOrNull("1e400"))
+        assertNull(Json.parseOrNull("[1e999]"))
+        assertEquals(JsonNumber(1e10), Json.parse("1e10"))
+        assertEquals(JsonNumber(-0.5), Json.parse("-0.5"))
+    }
+
+    @Test
+    fun `a unicode escape must be exactly four hex digits`() {
+        assertNull(Json.parseOrNull("\"\\u-001\""))
+        assertEquals(JsonString("A"), Json.parse("\"\\u0041\""))
+    }
+
+    @Test
     fun `the error says where it went wrong`() {
         val error = runCatching { Json.parse("""{"a": 1, "b": }""") }.exceptionOrNull()
         assertTrue(error is JsonException)

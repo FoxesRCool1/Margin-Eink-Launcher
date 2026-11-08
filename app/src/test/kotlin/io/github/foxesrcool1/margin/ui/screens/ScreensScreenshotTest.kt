@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
@@ -486,6 +487,18 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     }
 
     @Test
+    fun readingLibraryLargeFont() {
+        seedLibrary()
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 1.5f)) {
+                EinkTheme { ReadingScreen(onBack = {}) }
+            }
+        }
+        waitForText("Dracula")
+        capture("reading_library_large_font")
+    }
+
+    @Test
     fun writingBrowser() {
         val notes = NotesRepository(DataRoot.repository(context))
         notes.createFolder(notes.rootPath, "Essays")
@@ -568,7 +581,9 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
                 JournalScreen(onBack = {}, fixedToday = today, initialDate = LocalDate.of(2026, 9, 2))
             }
         }
-        waitForText("Walk outside")
+        // A long date title wraps to a second line in portrait, which leaves the
+        // habit list one row fewer, so wait for the title and not for the second habit.
+        waitForText("Wednesday 2 September")
         compose.onNodeWithText("Wednesday 2 September").assertIsDisplayed()
         capture("journal_day_of_search_hit")
     }
@@ -705,6 +720,46 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
             }
         }
         capture("journal_routine_options")
+    }
+
+    /** The Journal day at 1.5 times the text size. */
+    @Test
+    fun journalDayLargeFont() {
+        seedJournal()
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 1.5f)) {
+                EinkTheme { JournalScreen(onBack = {}, fixedToday = today) }
+            }
+        }
+        // At this size the title takes more lines and the habit list fewer rows,
+        // so wait for the title, which is always there.
+        waitForText("September")
+        capture("journal_day_large_font")
+    }
+
+    /** A habit held down, then Archive: the confirm asks before it leaves the list. */
+    @Test
+    fun journalArchiveHabitConfirm() {
+        seedJournal()
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Walk outside")
+        compose.onNodeWithText("Walk outside").performTouchInput { longClick() }
+        waitForText("Archive")
+        compose.onNodeWithText("Archive").performClick()
+        waitForText("Archive this habit?")
+        capture("journal_archive_habit_confirm")
+    }
+
+    /** One habit archived: the Archived Habits row opens the list of them. */
+    @Test
+    fun journalArchivedHabits() {
+        seedJournal()
+        HabitsRepository(DataRoot.repository(context)).setArchived("stretch", true)
+        compose.setContent { EinkTheme { JournalScreen(onBack = {}, fixedToday = today) } }
+        waitForText("Archived Habits")
+        compose.onNodeWithText("Archived Habits").performClick()
+        waitForText("Stretch")
+        capture("journal_archived_habits")
     }
 
     @Test
@@ -1041,6 +1096,54 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
         capture("settings_restore_dialog")
     }
 
+    /** The Screen tab at 1.5 times the text size: the rows grow, and none is cut. */
+    @Test
+    fun settingsLargeFont() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 1.5f)) {
+                EinkTheme {
+                    SettingsScreen(
+                        onBack = {},
+                        onOpenLog = {},
+                        onOpenDemo = {},
+                        initialPage = SettingsTab.Screen.ordinal,
+                        device = EinkDevices.get(context),
+                        isDefaultHome = { true },
+                    )
+                }
+            }
+        }
+        capture("settings_large_font")
+    }
+
+    /** The Daily Word Goal row, tapped: the list of goals it offers. */
+    @Test
+    fun settingsDailyWordGoalDialog() {
+        compose.setContent {
+            EinkTheme {
+                SettingsScreen(
+                    onBack = {},
+                    onOpenLog = {},
+                    onOpenDemo = {},
+                    initialPage = SettingsTab.Screen.ordinal,
+                    device = EinkDevices.get(context),
+                    isDefaultHome = { true },
+                )
+            }
+        }
+        // The settings list shows five rows a page, and this row is on a later page.
+        repeat(4) {
+            if (compose.onAllNodesWithText("Daily Word Goal").fetchSemanticsNodes().isEmpty()) {
+                compose.onNodeWithContentDescription("Next page").performClick()
+                compose.waitForIdle()
+            }
+        }
+        waitForText("Daily Word Goal")
+        compose.onNodeWithText("Daily Word Goal").performClick()
+        compose.waitForIdle()
+        capture("settings_daily_word_goal_dialog")
+    }
+
     @Test
     fun logViewer() {
         val lines = (1..9).map { index ->
@@ -1279,6 +1382,21 @@ abstract class ScreensScreenshotBase(private val suffix: String) {
     @Test
     fun splitSettingsInTheSecondHalf() = split(PanePage.Tab(LauncherRoute.Settings), "split_settings_pane") {
         AppsScreen(onBack = {}, previewApps = fewApps, previewFolders = someFolders)
+    }
+
+    @Test
+    fun splitLogViewer() {
+        val lines = (1..9).map { index ->
+            LogLine(
+                timeMillis = 0L,
+                level = if (index % 4 == 0) LogLevel.ERROR else LogLevel.INFO,
+                tag = "HomeActivity",
+                message = "Line $index of the log. A message can be long, and then it takes the second line of its row as well.",
+            )
+        }
+        split(PanePage.Tab(LauncherRoute.Apps), "split_log_viewer", waitFor = "Line 9 of the log") {
+            LogViewerScreen(linesProvider = { lines }, onCopyToDownloads = { 0 }, onBack = {})
+        }
     }
 
     @Test

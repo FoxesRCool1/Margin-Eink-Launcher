@@ -140,6 +140,16 @@ class ViwoodsEinkDeviceTest {
     }
 
     @Test
+    fun aStartThatHalfWorkedPutsTheModeBack() {
+        fake.failInitWriting = true
+        val device = device()
+        assertFalse(device.startFastPen(context, FastPenPath.Writing, Rect(0, 0, 10, 10)).ok)
+        assertNull(device.activeFastPen)
+        assertEquals("the old mode comes back", 3, fake.mode)
+        assertTrue(fake.calls.contains("exitWriting"))
+    }
+
+    @Test
     fun pathBWithoutABinderFailsCleanly() {
         val result = device().startFastPen(context, FastPenPath.AutoDraw, Rect(0, 0, 10, 10))
         assertFalse(result.ok)
@@ -148,8 +158,10 @@ class ViwoodsEinkDeviceTest {
     @Test
     fun aPathThatCrashedBeforeIsRefused() {
         val guard = FastPenGuard(temp.root)
-        guard.markTrying(FastPenPath.Writing)
-        guard.settleAfterStart()
+        repeat(2) {
+            guard.markTrying(FastPenPath.Writing)
+            guard.settleAfterStart()
+        }
         val result = device().startFastPen(context, FastPenPath.Writing, Rect(0, 0, 10, 10))
         assertFalse(result.ok)
         assertTrue(fake.calls.isEmpty())

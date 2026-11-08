@@ -137,6 +137,17 @@ class SplitState(
         return mainPage().isNoteAtOrInside(path)
     }
 
+    /**
+     * The Write page moved or renamed [from] to [to], a note or a folder. The
+     * second half follows it there, so its editor keeps the file it shows. True
+     * when the main half shows a note at or inside [from]: only the screen
+     * around it can close that.
+     */
+    fun noteMoved(from: String, to: String): Boolean {
+        for (i in trail.indices) trail[i] = trail[i].retargeted(from, to)
+        return mainPage().isNoteAtOrInside(from)
+    }
+
     /** Shows [text] at the top of the second half until the next move. */
     fun say(text: String) {
         notice = text
@@ -167,6 +178,15 @@ class SplitState(
     private companion object {
         const val MAX_TRAIL = 12
     }
+}
+
+/** This page with its note moved from [from] to [to], when it is that note or lies in that folder. */
+private fun PanePage.retargeted(from: String, to: String): PanePage = when (this) {
+    is PanePage.TypedNote ->
+        if (path == from || path.startsWith("$from/")) copy(path = to + path.removePrefix(from)) else this
+    is PanePage.InkNote ->
+        if (path == from || path.startsWith("$from/")) copy(path = to + path.removePrefix(from)) else this
+    else -> this
 }
 
 /** The words of the split screen, in one place for the tests. */

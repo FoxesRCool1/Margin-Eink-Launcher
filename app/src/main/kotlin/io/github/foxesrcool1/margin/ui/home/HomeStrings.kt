@@ -1,6 +1,7 @@
 package io.github.foxesrcool1.margin.ui.home
 
 import io.github.foxesrcool1.margin.core.routine.PartOfDay
+import io.github.foxesrcool1.margin.design.components.EinkSeparator
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.design.icons.LucideIcon
 import java.time.LocalDateTime
@@ -54,6 +55,6 @@ object HomeStrings {
         val parts = mutableListOf<String>()
         parts += if (onWifi) "Wi-Fi on" else "Wi-Fi off"
         if (batteryPercent != null) parts += "Battery $batteryPercent%"
-        return parts.joinToString("  .  ")
+        return parts.joinToString(EinkSeparator)
     }
 }

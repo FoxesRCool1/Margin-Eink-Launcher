@@ -9,8 +9,8 @@ class ApkCheckTest {
 
     private val installed = ApkFacts("io.example.app", versionCode = 100, signers = setOf("debug-key"))
 
-    private fun refusal(archive: ApkFacts?): String =
-        (ApkCheck.judge(archive, installed) as ApkVerdict.Refused).message
+    private fun refusal(archive: ApkFacts?, expectedCode: Long? = null): String =
+        (ApkCheck.judge(archive, installed, expectedCode) as ApkVerdict.Refused).message
 
     @Test
     fun `a newer build with the same key is fine`() {
@@ -20,6 +20,12 @@ class ApkCheckTest {
     @Test
     fun `the same version again is fine, as Android allows it`() {
         assertEquals(ApkVerdict.Ok, ApkCheck.judge(installed, installed))
+    }
+
+    @Test
+    fun `a file that is not the version it was published as is refused`() {
+        assertEquals(ApkVerdict.Ok, ApkCheck.judge(installed.copy(versionCode = 101), installed, 101L))
+        assertTrue(refusal(installed.copy(versionCode = 102), 101L).contains("not the version"))
     }
 
     @Test

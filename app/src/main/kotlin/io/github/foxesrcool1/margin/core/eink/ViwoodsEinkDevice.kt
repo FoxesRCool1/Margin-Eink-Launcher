@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
+import android.os.SystemClock
 import io.github.foxesrcool1.margin.core.log.AppLog
 import java.util.concurrent.TimeUnit
 
@@ -60,8 +61,9 @@ class ViwoodsEinkDevice(
     override var activeFastPen: FastPenPath? = null
         private set
 
+    /** When the shell fallback failed last, in uptime milliseconds. It rests for [SHELL_REST_MILLIS] after that. */
     @Volatile
-    private var shellFailed = false
+    private var shellFailedAt = -SHELL_REST_MILLIS
 
     private var modeBeforeFastPen: Int? = null
     private var lastRegion: Rect? = null
@@ -137,8 +139,13 @@ class ViwoodsEinkDevice(
 
     // -- Refresh ------------------------------------------------------------
 
-    override fun refreshMode(): RefreshMode? =
-        (wrapper?.call("getPictureMode")?.getOrNull() as? Int)?.let(RefreshMode::fromVendorCode)
+    override fun refreshMode(): RefreshMode? = pictureMode()?.let(RefreshMode::fromVendorCode)
+
+    /** The picture mode now, or null with the reason in the log. */
+    private fun pictureMode(): Int? =
+        wrapper?.call("getPictureMode")
+            ?.onFailure { AppLog.w(TAG, "getPictureMode failed: ${it.shortReason()}") }
+            ?.getOrNull() as? Int
 
     override fun setRefreshMode(mode: RefreshMode): EinkCallResult = setPictureMode(mode.vendorCode)
 
@@ -156,7 +163,7 @@ class ViwoodsEinkDevice(
     }
 
     override fun fullRefresh(): EinkCallResult {
-        val before = wrapper?.call("getPictureMode")?.getOrNull() as? Int
+        val before = pictureMode()
         val result = setPictureMode(RefreshMode.Full.vendorCode)
         if (result.ok) {
             // Nobody has written down whether the full refresh mode is one
@@ -185,7 +192,7 @@ class ViwoodsEinkDevice(
         if (activeFastPen != null) stopFastPen()
 
         guard?.markTrying(path)
-        modeBeforeFastPen = wrapper?.call("getPictureMode")?.getOrNull() as? Int
+        modeBeforeFastPen = pictureMode()
         lastRegion = Rect(drawRegion)
         lastExcluded = excluded.map(::Rect)
 
@@ -204,7 +211,10 @@ class ViwoodsEinkDevice(
         } else {
             "failed: " + failed.joinToString("; ") { "${it.call} (${it.detail})" }
         }
-        return log(EinkCallResult(call, ok, detail))
+        val result = log(EinkCallResult(call, ok, detail))
+        // A start that half worked would leave the panel in Fast mode for ever. Undo what went through.
+        if (!ok && activeFastPen != null) stopFastPen()
+        return result
     }
 
     /** Path A. The notes say these two calls are all it takes at target SDK 30. */
@@ -271,6 +281,7 @@ class ViwoodsEinkDevice(
         val call = "setAutoDrawToolType($code)"
         val viaWrapper = wrapper?.call("setAutoDrawToolType", code)
         if (viaWrapper?.isSuccess == true) return log(EinkCallResult(call, true, "wrapper"))
+        viaWrapper?.exceptionOrNull()?.let { AppLog.w(TAG, "$call failed on the wrapper: ${it.shortReason()}") }
         return binderCall(call, "setAutoDrawToolType", TXN_SET_AUTO_DRAW_TOOL_TYPE, listOf(code))
     }
 
@@ -278,6 +289,7 @@ class ViwoodsEinkDevice(
         val call = "setAutoDrawPenWidthRange($min, $max)"
         val viaWrapper = wrapper?.call("setAutoDrawPenWidthRange", min, max)
         if (viaWrapper?.isSuccess == true) return log(EinkCallResult(call, true, "wrapper"))
+        viaWrapper?.exceptionOrNull()?.let { AppLog.w(TAG, "$call failed on the wrapper: ${it.shortReason()}") }
         return binderCall(call, "setAutoDrawPenWidthRange", TXN_SET_AUTO_DRAW_PEN_WIDTH_RANGE, listOf(min, max))
     }
 
@@ -298,11 +310,12 @@ class ViwoodsEinkDevice(
             reasons += "transact: ${result.exceptionOrNull()?.shortReason()}"
         }
 
-        if (allowShell && !shellFailed) {
+        if (allowShell && SystemClock.uptimeMillis() - shellFailedAt >= SHELL_REST_MILLIS) {
             val result = runCatching { shellServiceCall(code, args) }
             if (result.isSuccess) return log(EinkCallResult(call, true, "service call: ${result.getOrNull()}"))
-            // A shell that failed once will fail again, and each try costs a process and a wait.
-            shellFailed = true
+            // A shell that just failed will probably fail again, and each try costs a process and a wait. Rest, then try again.
+            shellFailedAt = SystemClock.uptimeMillis()
+            AppLog.w(TAG, "$call failed in the shell, resting it for ${SHELL_REST_MILLIS / 1000} s: ${result.exceptionOrNull()?.shortReason()}")
             reasons += "shell: ${result.exceptionOrNull()?.shortReason()}"
         }
 
@@ -394,6 +407,7 @@ class ViwoodsEinkDevice(
         const val FULL_REFRESH_RESTORE_MILLIS = 700L
 
         private const val SHELL_TIMEOUT_MILLIS = 500L
+        private const val SHELL_REST_MILLIS = 60_000L
 
         private const val TOOL_PEN = 2
         private const val TOOL_ERASER = 4

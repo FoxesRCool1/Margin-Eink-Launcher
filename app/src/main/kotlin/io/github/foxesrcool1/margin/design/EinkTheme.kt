@@ -26,6 +26,9 @@ val LocalBotanicalArtEnabled = staticCompositionLocalOf { true }
  */
 private val SelectionColors = TextSelectionColors(
     handleColor = EinkColors.Ink,
+    // A deliberate exception to the no-alpha rule. The platform draws the
+    // selection under the glyphs, so a solid colour would hide the selected
+    // text. A light wash is the only readable choice.
     backgroundColor = EinkColors.Ink.copy(alpha = 0.25f),
 )
 

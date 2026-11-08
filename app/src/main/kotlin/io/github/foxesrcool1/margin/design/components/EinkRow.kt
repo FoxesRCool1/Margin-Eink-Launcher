@@ -17,6 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
@@ -37,6 +42,7 @@ fun EinkRow(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     minHeight: Dp = EinkDimens.touchTarget,
+    role: Role = Role.Button,
     content: @Composable ColumnScope.(pressed: Boolean) -> Unit,
 ) {
     var pressed by remember { mutableStateOf(false) }
@@ -55,6 +61,19 @@ fun EinkRow(
             .defaultMinSize(minHeight = minHeight)
             .clip(EinkShapes.field)
             .background(if (pressed) EinkColors.Ink else EinkColors.Paper)
+            .semantics(mergeDescendants = true) {
+                this.role = role
+                this.onClick(action = {
+                    currentClick()
+                    true
+                })
+                if (hasLongClick) {
+                    this.onLongClick(label = "Options", action = {
+                        currentLongClick?.invoke()
+                        true
+                    })
+                }
+            }
             .pointerInput(hasLongClick) {
                 // detectTapGestures wants ((Offset) -> Unit)?, so the parameter
                 // type has to be written out. Passing null when there is no

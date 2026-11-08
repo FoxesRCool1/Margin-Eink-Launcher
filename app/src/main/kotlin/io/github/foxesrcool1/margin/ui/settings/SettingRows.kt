@@ -7,6 +7,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import io.github.foxesrcool1.margin.design.EinkColors
 import io.github.foxesrcool1.margin.design.EinkType
@@ -77,7 +81,16 @@ fun SettingsList(rows: List<Setting>, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SettingRow(row: Setting) {
-    EinkRow(onClick = { if (row.enabled) row.onClick() }) { pressed ->
+    val on = row.on
+    val switchModifier = if (on != null) {
+        Modifier.semantics(mergeDescendants = true) {
+            toggleableState = ToggleableState(on)
+        }
+    } else {
+        Modifier
+    }
+    val rowRole = if (on != null) Role.Switch else Role.Button
+    EinkRow(onClick = { if (row.enabled) row.onClick() }, modifier = switchModifier, role = rowRole) { pressed ->
         val strong = when {
             pressed && row.enabled -> EinkColors.Paper
             row.enabled -> EinkColors.Ink

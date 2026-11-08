@@ -14,9 +14,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.settings.WindowSettings
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -41,16 +46,26 @@ object ScreenWindow {
     @Volatile
     private var cached: WindowSettings? = null
 
-    private val writer = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** One thread, so saves land in the order they were made. */
+    private val saver = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "ScreenWindowSaver").apply { isDaemon = true }
+    }
+
+    private val writer = CoroutineScope(SupervisorJob() + saver.asCoroutineDispatcher())
+
+    @Volatile
+    private var lastSave: Job? = null
 
     /** What the windows are set to right now. */
     fun settings(context: Context): WindowSettings {
         cached?.let { return it }
         val started = System.currentTimeMillis()
+        val failed = AtomicBoolean(false)
         val loaded = runCatching {
             runBlocking { SettingsStore(context).window.first() }
         }.getOrElse {
             AppLog.w(TAG, "Could not read the window settings, using the defaults", it)
+            failed.set(true)
             WindowSettings()
         }
         val took = System.currentTimeMillis() - started
@@ -60,7 +75,8 @@ object ScreenWindow {
             took,
             io.github.foxesrcool1.margin.core.speed.SpeedWatch.Budget.WINDOW_SETTINGS,
         )
-        cached = loaded
+        // A failed read is not cached, so the next call tries the file again.
+        if (!failed.get()) cached = loaded
         return loaded
     }
 
@@ -118,7 +134,7 @@ object ScreenWindow {
         AppLog.i(TAG, "Window settings are now $next")
         apply(activity)
         val store = SettingsStore(activity)
-        writer.launch {
+        lastSave = writer.launch {
             runCatching { store.setWindow(next) }
                 .onFailure { AppLog.e(TAG, "Could not save the window settings", it) }
         }
@@ -133,6 +149,13 @@ object ScreenWindow {
     /** For the tests, which share one process and must not share a setting. */
     internal fun forget() {
         cached = null
+    }
+
+    /** Waits until the saves made so far are on disk. For the tests. */
+    internal fun flush() {
+        val done = CountDownLatch(1)
+        lastSave?.invokeOnCompletion { done.countDown() } ?: done.countDown()
+        done.await(2, TimeUnit.SECONDS)
     }
 }
 

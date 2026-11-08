@@ -3,6 +3,7 @@ package io.github.foxesrcool1.margin.ui.ink
 import android.os.Handler
 import android.os.Looper
 import io.github.foxesrcool1.margin.core.ink.InkNote
+import io.github.foxesrcool1.margin.core.ink.InkNoteCodec
 import io.github.foxesrcool1.margin.core.ink.InkNotesRepository
 import io.github.foxesrcool1.margin.core.ink.InkPageData
 import io.github.foxesrcool1.margin.core.ink.InkStroke
@@ -69,6 +70,14 @@ class InkNoteController(
     @Volatile
     private var saveCount = 0
 
+    /** True when the last write to the disk failed and nothing has been written since. The screen may tell the user. */
+    @Volatile
+    var saveFailed = false
+        private set
+
+    /** Told on the main thread: true when a save failed, false when a later one worked. The screen shows a notice. */
+    var onSaveFailed: ((failed: Boolean) -> Unit)? = null
+
     fun attach(view: InkCanvasView) {
         // A turn of the screen lays the page out again on a new canvas. What
         // was drawn on the old one and not yet collected comes along.
@@ -131,14 +140,16 @@ class InkNoteController(
         return true
     }
 
-    /** Adds an empty page after the one on screen and goes to it. */
-    fun addPage() {
+    /** Adds an empty page after the one on screen and goes to it. False at the most pages a note can keep. */
+    fun addPage(): Boolean {
+        if (pages.size >= InkNoteCodec.MAX_PAGES) return false
         collect()
         pages.add(pageIndex + 1, PageSlot(emptyList(), null, true))
         pageIndex++
         unsaved = true
         showCurrentPage()
         save()
+        return true
     }
 
     /** Deletes the page on screen. The last page is emptied instead, so a note always has one. */
@@ -171,7 +182,7 @@ class InkNoteController(
     }
 
     /** True when nothing here waits to be saved, so the note may be read again without losing a stroke. Main thread only. */
-    fun isClean(): Boolean = mayWrite && !unsaved && lastWrite?.isDone != false
+    fun isClean(): Boolean = mayWrite && !unsaved && !saveFailed && lastWrite?.isDone != false
 
     /** Takes the version of the note that is on the disk now. Call it only when [isClean] said yes. */
     fun reload(note: InkNote, stamp: Long) {
@@ -210,18 +221,23 @@ class InkNoteController(
         // part the screen waits for when it goes away.
         lastWrite = saver.submit {
             runCatching {
-                if (nothingToKeep()) return@runCatching
+                if (nothingToKeep()) {
+                    saveFailed = false
+                    return@runCatching
+                }
                 val started = System.currentTimeMillis()
                 val data = frozen.map { InkPageData(it.strokes, it.preview) }
                 val ok = repository.save(path, InkNote(width, height, template, data))
                 if (ok) diskStamp = repository.stampOf(path)
                 val took = System.currentTimeMillis() - started
                 if (!ok || took > 500) AppLog.i(TAG, "Saved $path: ok=$ok, ${data.size} pages, $took ms")
-                if (!ok) main.post { unsaved = true }
+                val wasFailed = saveFailed
+                saveFailed = !ok
+                if (!ok) retryLater() else if (wasFailed) main.post { onSaveFailed?.invoke(false) }
             }.onFailure {
                 AppLog.e(TAG, "Saving $path failed", it)
-                // Still not on the disk, so the next save has to try again.
-                main.post { unsaved = true }
+                saveFailed = true
+                retryLater()
             }
         }
 
@@ -253,12 +269,31 @@ class InkNoteController(
         }
     }
 
+    /** Still not on the disk, so the next save has to try again. Same wait as after a stroke. */
+    private fun retryLater() {
+        main.post {
+            unsaved = true
+            onSaveFailed?.invoke(true)
+            if (!closed) main.postDelayed(autosave, AUTOSAVE_IDLE_MILLIS)
+        }
+    }
+
     /**
      * Saves and waits a short while, for the moment the screen goes away. It
      * waits for the strokes to be on the disk, not for the previews.
      */
     fun saveAndWait() {
         save()
+        waitForWrite()
+        // The screen may be gone before the timer retries, so try once more now.
+        if (saveFailed && mayWrite) {
+            unsaved = true
+            save()
+            waitForWrite()
+        }
+    }
+
+    private fun waitForWrite() {
         runCatching {
             lastWrite?.get(SAVE_WAIT_SECONDS, TimeUnit.SECONDS)
         }.onFailure { AppLog.w(TAG, "The last save of $path did not finish in time", it) }

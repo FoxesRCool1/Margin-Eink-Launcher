@@ -66,6 +66,16 @@ class RoutineRepository(private val data: DataRepository) {
     fun save(document: RoutineDocument): Boolean =
         data.store.writeText(listPath, RoutineFile.serialise(document))
 
+    /**
+     * Writes [after] and returns it. When the write fails, logs it and returns
+     * [before], which is what is on disk.
+     */
+    private fun commit(before: RoutineDocument, after: RoutineDocument): RoutineDocument {
+        if (save(after)) return after
+        AppLog.w(TAG, "routine.json could not be written. Nothing was changed.")
+        return before
+    }
+
     fun add(label: String, target: String = ""): RoutineDocument = synchronized(LOCK) {
         val current = read() ?: return@synchronized load()
         // A removed item leaves its ticks, and a new item with the same label
@@ -73,7 +83,10 @@ class RoutineRepository(private val data: DataRepository) {
         val taken = current.items.map { it.id }.toSet() + readMarks().orEmpty().map { it.habitId }.toSet()
         val id = RoutineFile.idFor(label, taken)
         val next = RoutineDocument(current.items + RoutineItem(id, label.trim(), target))
-        save(next)
+        if (!save(next)) {
+            AppLog.w(TAG, "routine.json could not be written. Nothing was changed.")
+            return@synchronized current
+        }
         AppLog.i(TAG, "Added routine item $id")
         next
     }
@@ -82,18 +95,34 @@ class RoutineRepository(private val data: DataRepository) {
     fun setPart(id: String, part: PartOfDay): RoutineDocument = synchronized(LOCK) {
         val current = read() ?: return@synchronized load()
         val next = RoutineDocument(current.items.map { if (it.id == id) it.copy(part = part) else it })
-        if (next != current) save(next)
-        next
+        if (next == current) return@synchronized current
+        commit(current, next)
+    }
+
+    /**
+     * Sets the target of one item. An id that is not there changes nothing. A
+     * target that is neither a tab nor an app is stored as "".
+     */
+    fun setTarget(id: String, target: String): RoutineDocument = synchronized(LOCK) {
+        val current = read() ?: return@synchronized load()
+        val accepted = if (target in RoutineItem.TAB_TARGETS || RoutineItem("", "", target).appComponent() != null) {
+            target
+        } else {
+            ""
+        }
+        val next = RoutineDocument(current.items.map { if (it.id == id) it.copy(target = accepted) else it })
+        if (next == current) return@synchronized current
+        commit(current, next)
     }
 
     fun remove(id: String): RoutineDocument = synchronized(LOCK) {
         val current = read() ?: return@synchronized load()
-        current.without(id).also { save(it) }
+        commit(current, current.without(id))
     }
 
     fun move(id: String, by: Int): RoutineDocument = synchronized(LOCK) {
         val current = read() ?: return@synchronized load()
-        current.move(id, by).also { save(it) }
+        commit(current, current.move(id, by))
     }
 
     /** The marks, or null when the log is there and could not be read. See [read]. */
@@ -120,7 +149,11 @@ class RoutineRepository(private val data: DataRepository) {
             true
         }
 
-        data.store.writeText(logPath, HabitLogFile.serialise(current))
+        if (!data.store.writeText(logPath, HabitLogFile.serialise(current))) {
+            AppLog.w(TAG, "routine-log.csv could not be written. Nothing was changed.")
+            // The state on disk: the tick was not saved, so it is as it was before.
+            return@synchronized !nowDone
+        }
         nowDone
     }
 

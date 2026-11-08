@@ -92,6 +92,17 @@ class AppFoldersTest {
     }
 
     @Test
+    fun `the parse counts the folders it dropped`() {
+        val parsed = AppFoldersFile.parseCounting(
+            """{"version": 1, "folders": [{"name": "Reading", "apps": []}, {"apps": []}, {"name": "reading"}]}""",
+        )
+        assertEquals(2, parsed?.dropped)
+        assertEquals(listOf(AppFolder("Reading")), parsed?.folders?.folders)
+        assertEquals(1, AppFoldersFile.parseCounting("""{"version": 1, "folders": "Reading"}""")?.dropped)
+        assertEquals(0, AppFoldersFile.parseCounting("""{"version": 1, "folders": []}""")?.dropped)
+    }
+
+    @Test
     fun `the repository writes a file a person can read, into the apps folder`() {
         val data = DataRepository(LocalFileStore(temporary.newFolder("Margin")))
         val repository = AppFoldersRepository(data)

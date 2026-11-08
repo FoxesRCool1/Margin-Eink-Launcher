@@ -47,7 +47,7 @@ class HabitsRepository(private val data: DataRepository) {
         }
         if (text == null) return HabitsDocument(emptyList(), DayBoundary.DEFAULT_HOUR)
 
-        val parsed = HabitsFile.parse(text)
+        val parsed = HabitsFile.parseCounting(text)
         if (parsed == null) {
             AppLog.w(TAG, "habits.json could not be read. Starting from an empty list.")
             // The next "Add habit" writes a new file over this one. Keep what
@@ -55,7 +55,19 @@ class HabitsRepository(private val data: DataRepository) {
             data.keepUnreadable(StorageLayout.habitsPath(), "${StorageLayout.HABITS}/habits.unreadable.json")
             return HabitsDocument(emptyList(), DayBoundary.DEFAULT_HOUR)
         }
-        return parsed
+        val (document, dropped) = parsed
+        if (dropped > 0) {
+            AppLog.w(TAG, "habits.json has $dropped entries that could not be read. They are kept in a copy.")
+            // The next save writes the file without them. Keep the copy first.
+            data.keepUnreadable(StorageLayout.habitsPath(), "${StorageLayout.HABITS}/habits.unreadable.json")
+        }
+        return document
+    }
+
+    /** Tells the user a write failed, and hands back the document as it was. */
+    private fun unsaved(old: HabitsDocument): HabitsDocument {
+        AppLog.e(TAG, "habits.json could not be saved. Nothing was changed.")
+        return old
     }
 
     fun save(document: HabitsDocument): Boolean =
@@ -72,14 +84,14 @@ class HabitsRepository(private val data: DataRepository) {
             val next = current.copy(
                 habits = current.habits.map { if (it.id == archived.id) it.copy(archived = false) else it },
             )
-            save(next)
+            if (!save(next)) return@synchronized unsaved(current)
             AppLog.i(TAG, "Brought back the archived habit ${archived.id}")
             return@synchronized next
         }
 
         val id = HabitsFile.idFor(name, current.habits.map { it.id }.toSet())
         val next = current.copy(habits = current.habits + Habit(id, name.trim(), today))
-        save(next)
+        if (!save(next)) return@synchronized unsaved(current)
         AppLog.i(TAG, "Added habit $id")
         next
     }
@@ -91,7 +103,7 @@ class HabitsRepository(private val data: DataRepository) {
                 if (habit.id == habitId) habit.copy(name = newName.trim()) else habit
             },
         )
-        save(next)
+        if (!save(next)) return@synchronized unsaved(current)
         next
     }
 
@@ -109,15 +121,16 @@ class HabitsRepository(private val data: DataRepository) {
                 if (habit.id == habitId) habit.copy(archived = archived) else habit
             },
         )
-        save(next)
+        if (!save(next)) return@synchronized unsaved(current)
         AppLog.i(TAG, "Habit $habitId archived: $archived")
         next
     }
 
     fun setDayBoundaryHour(hour: Int): HabitsDocument = synchronized(LOCK) {
         require(hour in 0..23) { "The day boundary must be an hour of the day" }
-        val next = (read() ?: return@synchronized load()).copy(dayBoundaryHour = hour)
-        save(next)
+        val current = read() ?: return@synchronized load()
+        val next = current.copy(dayBoundaryHour = hour)
+        if (!save(next)) return@synchronized unsaved(current)
         next
     }
 
@@ -131,7 +144,13 @@ class HabitsRepository(private val data: DataRepository) {
             AppLog.e(TAG, "log.csv could not be read. Nothing was changed.", problem)
             return null
         } ?: return emptyList()
-        return HabitLogFile.parse(text)
+        val (marks, dropped) = HabitLogFile.parseCounting(text)
+        if (dropped > 0) {
+            AppLog.w(TAG, "log.csv has $dropped lines that could not be read. They are kept in a copy.")
+            // The next save writes the log without them. Keep the copy first.
+            data.keepUnreadable(StorageLayout.habitLogPath(), "${StorageLayout.HABITS}/log.unreadable.csv")
+        }
+        return marks
     }
 
     fun saveMarks(marks: Collection<HabitMark>): Boolean =
@@ -142,6 +161,7 @@ class HabitsRepository(private val data: DataRepository) {
         // Unreadable log: change nothing, and say the day is not done.
         val marks = (readMarks() ?: return@synchronized false).toMutableList()
         val mark = HabitMark(habitId, date)
+        val wasDone = mark in marks
 
         val nowDone = if (marks.remove(mark)) {
             false
@@ -150,7 +170,10 @@ class HabitsRepository(private val data: DataRepository) {
             true
         }
 
-        saveMarks(marks)
+        if (!saveMarks(marks)) {
+            AppLog.e(TAG, "log.csv could not be saved. Nothing was changed.")
+            return@synchronized wasDone
+        }
         AppLog.i(TAG, "Habit $habitId on $date is now ${if (nowDone) "done" else "not done"}")
         nowDone
     }

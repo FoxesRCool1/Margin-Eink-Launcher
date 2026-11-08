@@ -157,10 +157,6 @@ class InkNote(
     val template: PageTemplate = PageTemplate.Blank,
     val pages: List<InkPageData> = listOf(InkPageData(emptyList())),
 ) {
-    fun withPages(pages: List<InkPageData>): InkNote = InkNote(pageWidth, pageHeight, template, pages)
-
-    fun withTemplate(template: PageTemplate): InkNote = InkNote(pageWidth, pageHeight, template, pages)
-
     companion object {
         /** The panel of the AiPaper Mini, so one unit is one pixel there. */
         const val DEFAULT_PAGE_WIDTH = 1440f

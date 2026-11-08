@@ -11,7 +11,11 @@ import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class BackupArchiveTest {
@@ -176,6 +180,22 @@ class BackupArchiveTest {
     }
 
     @Test
+    fun `a file whose first read fails has no entry in the zip and is skipped`() {
+        source.writeText("notes/good.md", "good")
+        source.writeText("notes/bad.md", "bad")
+
+        val zipped = ByteArrayOutputStream()
+        val backup = BackupArchive.backup(ReadFailingStore(source, "notes/bad.md"), zipped)
+        assertEquals(listOf("notes/bad.md"), backup.skipped)
+
+        val names = ZipInputStream(ByteArrayInputStream(zipped.toByteArray())).use { zip ->
+            generateSequence { zip.nextEntry }.map { it.name }.toList()
+        }
+        assertFalse(names.contains("notes/bad.md"))
+        assertTrue(names.contains("notes/good.md"))
+    }
+
+    @Test
     fun `a zip that ends early reports what it restored`() {
         source.writeText("notes/a.md", "first")
         source.write("notes/b.bin", java.util.Random(1).let { r -> ByteArray(5000).also(r::nextBytes) })
@@ -188,5 +208,119 @@ class BackupArchiveTest {
         assertTrue(result.stoppedEarly)
         assertEquals(1, result.fileCount)
         assertEquals("first", target.readText("notes/a.md"))
+    }
+
+    @Test
+    fun `an entry named like a top folder is refused and the folder is left alone`() {
+        target.writeText("notes/plan.md", "the plan")
+        val zipped = ByteArrayOutputStream()
+        ZipOutputStream(zipped).use { zip ->
+            zip.putNextEntry(ZipEntry("notes"))
+            zip.write("x".toByteArray())
+            zip.closeEntry()
+        }
+
+        val result = BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+
+        assertEquals(0, result.fileCount)
+        assertEquals(listOf("notes"), result.refused)
+        assertTrue(target.isDirectory("notes"))
+        assertEquals("the plan", target.readText("notes/plan.md"))
+    }
+
+    @Test
+    fun `an entry named like an existing folder is refused`() {
+        target.writeText("notes/sub/inside.md", "inside")
+        val zipped = ByteArrayOutputStream()
+        ZipOutputStream(zipped).use { zip ->
+            zip.putNextEntry(ZipEntry("notes/sub"))
+            zip.write("x".toByteArray())
+            zip.closeEntry()
+        }
+
+        val result = BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+
+        assertEquals(0, result.fileCount)
+        assertEquals(listOf("notes/sub"), result.refused)
+        assertTrue(target.isDirectory("notes/sub"))
+        assertEquals("inside", target.readText("notes/sub/inside.md"))
+    }
+
+    @Test
+    fun `settings come back out of a restore as the same map`() {
+        source.writeText("notes/plan.md", "the plan")
+        val settings = mapOf(
+            "theme" to "dark",
+            "quote" to "say \"hi\"",
+            "city" to "Zürich ✓",
+        )
+        val zipped = ByteArrayOutputStream()
+        BackupArchive.backup(source, zipped, settings = settings)
+
+        val result = BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+
+        assertEquals(settings, result.settings)
+        assertTrue(result.refused.isEmpty())
+        assertFalse(target.exists("settings.json"))
+    }
+
+    @Test
+    fun `a backup without settings writes no settings file`() {
+        source.writeText("notes/plan.md", "the plan")
+        val zipped = ByteArrayOutputStream()
+        BackupArchive.backup(source, zipped, settings = emptyMap())
+
+        val names = ZipInputStream(ByteArrayInputStream(zipped.toByteArray())).use { zip ->
+            generateSequence { zip.nextEntry }.map { it.name }.toList()
+        }
+        assertFalse(names.contains("settings.json"))
+
+        val result = BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+        assertTrue(result.settings.isEmpty())
+        assertTrue(result.refused.isEmpty())
+    }
+
+    @Test
+    fun `a file that fails while it is read is skipped and the rest still goes in`() {
+        source.writeText("notes/good.md", "good")
+        source.writeText("notes/bad.md", "bad")
+
+        val zipped = ByteArrayOutputStream()
+        val backup = BackupArchive.backup(ReadFailingStore(source, "notes/bad.md"), zipped)
+        assertEquals(1, backup.fileCount)
+        assertEquals(listOf("notes/bad.md"), backup.skipped)
+
+        BackupArchive.restore(target, ByteArrayInputStream(zipped.toByteArray()))
+        assertEquals("good", target.readText("notes/good.md"))
+    }
+
+    @Test(expected = IOException::class)
+    fun `a failed write to the output stops the backup instead of counting files as skipped`() {
+        source.writeText("notes/a.md", "a")
+        source.writeText("notes/b.md", "b")
+        BackupArchive.backup(source, FullDiskOutput())
+    }
+}
+
+/** A store where one file opens but its bytes cannot be read, like a card that fails half way. */
+private class ReadFailingStore(private val real: FileStore, private vararg val broken: String) : FileStore by real {
+    override fun openInput(relativePath: String): InputStream? =
+        if (relativePath in broken) FailingInput() else real.openInput(relativePath)
+
+    private class FailingInput : InputStream() {
+        override fun read(): Int {
+            throw IOException("the card failed")
+        }
+    }
+}
+
+/** An output that fails on every write, like a full disk. */
+private class FullDiskOutput : OutputStream() {
+    override fun write(b: Int) {
+        throw IOException("disk full")
+    }
+
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        throw IOException("disk full")
     }
 }

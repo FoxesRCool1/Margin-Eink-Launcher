@@ -4,6 +4,7 @@ import io.github.foxesrcool1.margin.core.json.Json
 import io.github.foxesrcool1.margin.core.json.JsonArray
 import io.github.foxesrcool1.margin.core.json.JsonObject
 import io.github.foxesrcool1.margin.core.storage.DataRepository
+import io.github.foxesrcool1.margin.core.storage.FileStore
 import io.github.foxesrcool1.margin.core.storage.LocalFileStore
 import io.github.foxesrcool1.margin.core.storage.UnreadableStore
 import org.junit.Assert.assertEquals
@@ -218,6 +219,60 @@ class RoutineTest {
     }
 
     @Test
+    fun `a target given when adding survives a reload`() {
+        routine.add("Stretch", "read")
+
+        assertEquals("read", routine.load().items.single().target)
+    }
+
+    @Test
+    fun `set target changes one item and survives a reload, and an unknown id changes nothing`() {
+        routine.add("Journal", "journal")
+        routine.add("Read", "read")
+
+        routine.setTarget("journal", "apps")
+
+        val loaded = routine.load()
+        assertEquals("apps", loaded.items.first { it.id == "journal" }.target)
+        assertEquals("read", loaded.items.first { it.id == "read" }.target)
+
+        routine.setTarget("no-such-id", "write")
+        assertEquals(listOf("apps", "read"), routine.load().items.map { it.target })
+    }
+
+    @Test
+    fun `set target stores an unknown target as nothing`() {
+        routine.add("Journal", "journal")
+
+        routine.setTarget("journal", "bogus")
+        assertEquals("", routine.load().items.single().target)
+
+        routine.setTarget("journal", "app:com.example/com.example.Main")
+        assertEquals("app:com.example/com.example.Main", routine.load().items.single().target)
+    }
+
+    @Test
+    fun `the target label says what an item opens`() {
+        assertEquals("Read", RoutineItem("a", "A", "read").targetLabel)
+        assertEquals("Write", RoutineItem("a", "A", "write").targetLabel)
+        assertEquals("Journal", RoutineItem("a", "A", "journal").targetLabel)
+        assertEquals("Apps", RoutineItem("a", "A", "apps").targetLabel)
+        assertEquals("App", RoutineItem("a", "A", "app:com.example/com.example.Main").targetLabel)
+        assertNull(RoutineItem("a", "A", "").targetLabel)
+        assertNull(RoutineItem("a", "A", "bogus").targetLabel)
+    }
+
+    @Test
+    fun `a change the store refuses returns the list as it was`() {
+        routine.add("Journal", "journal")
+        val before = routine.load()
+
+        val refusing = RoutineRepository(DataRepository(RefusesWrites(store)))
+        assertEquals(before, refusing.add("Read", "read"))
+        assertEquals(before, refusing.load())
+    }
+
+    @Test
     fun `a removed item's ticks do not come back with a new item of the same name`() {
         routine.add("Stretch")
         routine.toggle("stretch", today)
@@ -376,4 +431,9 @@ class RoutineTest {
         assertEquals("e", routine.next(today, LocalTime.of(2, 0))!!.item.id)
         assertNull(routine.next(today, LocalTime.of(4, 0)))
     }
+}
+
+/** A store that reads as normal but refuses every write. */
+private class RefusesWrites(real: FileStore) : FileStore by real {
+    override fun writeText(relativePath: String, text: String): Boolean = false
 }

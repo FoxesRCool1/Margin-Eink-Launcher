@@ -29,8 +29,8 @@ class HomeStringsTest {
 
     @Test
     fun `the status line shows what is known`() {
-        assertEquals("Wi-Fi on  .  Battery 82%", HomeStrings.status(82, onWifi = true))
-        assertEquals("Wi-Fi off  .  Battery 5%", HomeStrings.status(5, onWifi = false))
+        assertEquals("Wi-Fi on · Battery 82%", HomeStrings.status(82, onWifi = true))
+        assertEquals("Wi-Fi off · Battery 5%", HomeStrings.status(5, onWifi = false))
     }
 
     @Test

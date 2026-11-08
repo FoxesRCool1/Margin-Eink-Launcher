@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import io.github.foxesrcool1.margin.core.log.AppLog
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
+import io.github.foxesrcool1.margin.core.settings.SettingsStore
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -109,14 +110,19 @@ fun rememberStorageActions(onStatus: (String) -> Unit): StorageActions {
     )
 }
 
-private fun writeBackup(context: Context, uri: Uri): String {
+private suspend fun writeBackup(context: Context, uri: Uri): String {
     val repository = DataRoot.repository(context)
     return runCatching {
         val stream = context.contentResolver.openOutputStream(uri)
             ?: return "Could not open the file"
         stream.use { output ->
-            val result = repository.backupTo(output)
-            "Backup saved"
+            val settings = SettingsStore(context).exportAll()
+            val result = repository.backupTo(output, settings)
+            when (result.skipped.size) {
+                0 -> "Backup saved"
+                1 -> "Backup saved, but 1 file could not be read"
+                else -> "Backup saved, but ${result.skipped.size} files could not be read"
+            }
         }
     }.getOrElse { error ->
         AppLog.e(TAG, "Backup failed", error)
@@ -124,13 +130,17 @@ private fun writeBackup(context: Context, uri: Uri): String {
     }
 }
 
-private fun readBackup(context: Context, uri: Uri): String {
+private suspend fun readBackup(context: Context, uri: Uri): String {
     val repository = DataRoot.repository(context)
     return runCatching {
         val stream = context.contentResolver.openInputStream(uri)
             ?: return "Could not open the file"
         stream.use { input ->
             val result = repository.restoreFrom(input)
+            if (result.settings.isNotEmpty()) {
+                runCatching { SettingsStore(context).importAll(result.settings) }
+                    .onFailure { AppLog.w(TAG, "Settings could not be restored", it) }
+            }
             if (result.stoppedEarly) {
                 "Restored ${result.fileCount} files. The zip ended early."
             } else if (result.refused.isEmpty()) {

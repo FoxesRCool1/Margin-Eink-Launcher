@@ -19,12 +19,17 @@ object RelativePaths {
         val unified = path.replace('\\', '/')
 
         if (unified.startsWith("/")) throw UnsafePathException(path)
-        if (unified.length >= 2 && unified[1] == ':') throw UnsafePathException(path)
+        // A Windows drive such as "C:" or "C:/x" is refused. "a:b" or "1: Intro.md" are ordinary names.
+        val isDrive = unified.length >= 2 &&
+            (unified[0] in 'a'..'z' || unified[0] in 'A'..'Z') &&
+            unified[1] == ':' &&
+            (unified.length == 2 || unified[2] == '/')
+        if (isDrive) throw UnsafePathException(path)
 
         val parts = unified.split('/').filter { it.isNotEmpty() }
         parts.forEach { part ->
             if (part == "." || part == "..") throw UnsafePathException(path)
-            if (part.trim() != part) throw UnsafePathException(path)
+            if (part.isBlank()) throw UnsafePathException(path)
         }
         return parts.joinToString("/")
     }

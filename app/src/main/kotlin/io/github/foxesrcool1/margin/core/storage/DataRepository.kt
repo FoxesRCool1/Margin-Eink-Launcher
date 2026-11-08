@@ -36,6 +36,13 @@ class DataRepository(val store: FileStore) {
         return allMade
     }
 
+    /** Removes part files left behind by a write that was cut short, once they are a day old. */
+    fun sweepLeftovers(): Int {
+        val count = store.sweepLeftovers(24L * 60 * 60 * 1000)
+        if (count > 0) AppLog.i(TAG, "Removed $count leftover part files")
+        return count
+    }
+
     // -- Books ------------------------------------------------------------
 
     fun listBooks(): List<StoredEntry> =
@@ -169,8 +176,10 @@ class DataRepository(val store: FileStore) {
         if (!store.exists(relativePath)) return relativePath
         val parent = RelativePaths.parentOf(relativePath)
         val name = RelativePaths.nameOf(relativePath)
-        val stem = name.substringBeforeLast('.', name)
-        val extension = name.substringAfterLast('.', "")
+        // A folder has no extension, so "Drafts v1.2" keeps its whole name.
+        val isFolder = store.isDirectory(relativePath)
+        val stem = if (isFolder) name else name.substringBeforeLast('.', name)
+        val extension = if (isFolder) "" else name.substringAfterLast('.', "")
         val suffix = if (extension.isEmpty()) "" else ".$extension"
 
         var counter = 2
@@ -212,8 +221,8 @@ class DataRepository(val store: FileStore) {
 
     // -- Backup -----------------------------------------------------------
 
-    fun backupTo(output: OutputStream): BackupResult {
-        val result = BackupArchive.backup(store, output)
+    fun backupTo(output: OutputStream, settings: Map<String, String> = emptyMap()): BackupResult {
+        val result = BackupArchive.backup(store, output, settings = settings)
         AppLog.i(TAG, "Backup wrote ${result.fileCount} files, ${result.byteCount} bytes")
         if (result.skipped.isNotEmpty()) {
             AppLog.w(TAG, "Backup skipped ${result.skipped.size} files: ${result.skipped.take(5)}")

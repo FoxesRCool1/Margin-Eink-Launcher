@@ -45,7 +45,44 @@ class StorageLayoutTest {
     @Test
     fun `a very long name is cut short`() {
         val long = "x".repeat(500)
-        assertTrue(StorageLayout.safeName(long).length <= 120)
+        assertTrue(StorageLayout.safeName(long).toByteArray(Charsets.UTF_8).size <= 200)
+    }
+
+    @Test
+    fun `a long latin book name keeps its extension and stays a book`() {
+        val name = "x".repeat(150) + ".epub"
+        val path = StorageLayout.bookPath(name)
+        assertTrue(path.endsWith(".epub"))
+        assertTrue(path.substringAfterLast('/').toByteArray(Charsets.UTF_8).size <= 200)
+        assertTrue(StorageLayout.isBook(name))
+    }
+
+    @Test
+    fun `a long CJK book name keeps its extension within 200 bytes`() {
+        val path = StorageLayout.bookPath("漢".repeat(100) + ".pdf")
+        assertTrue(path.endsWith(".pdf"))
+        assertTrue(path.substringAfterLast('/').toByteArray(Charsets.UTF_8).size <= 200)
+    }
+
+    @Test
+    fun `safeName never splits a surrogate pair`() {
+        val result = StorageLayout.safeName("a".repeat(198) + "😀", 200)
+        assertEquals("a".repeat(198), result)
+        assertFalse(result.any { it.isSurrogate() })
+    }
+
+    @Test
+    fun `a long book id keeps its size suffix and is a safe name`() {
+        val id = StorageLayout.bookIdFor("w".repeat(300) + ".epub", 12345)
+        assertTrue(id.endsWith("-12345"))
+        assertTrue(id.toByteArray(Charsets.UTF_8).size <= 200)
+        assertEquals(id, StorageLayout.safeName(id))
+    }
+
+    @Test
+    fun `a short name stays unchanged`() {
+        assertEquals("notes", StorageLayout.safeName("notes"))
+        assertEquals("books/a.epub", StorageLayout.bookPath("a.epub"))
     }
 
     @Test

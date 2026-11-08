@@ -20,12 +20,16 @@ class SpeedRulesTest {
         const val PACKAGE_PATH = "io/github/foxesrcool1/margin/"
     }
 
+    /** The source root that holds `main/kotlin`, found from the test's working directory. */
+    private val src: File by lazy {
+        listOf(File("src"), File("app/src")).first { File(it, "main/kotlin").isDirectory }
+    }
+
     /**
      * Every source set that goes into an APK: main, and the debug and release
      * parts. The tablet runs the debug build, so its own code counts too.
      */
     private val sources: List<Pair<String, List<String>>> by lazy {
-        val src = listOf(File("src"), File("app/src")).first { File(it, "main/kotlin").isDirectory }
         listOf("main", "debug", "release", "viwoods", "generic")
             .map { File(src, "$it/kotlin") }
             .filter { it.isDirectory }
@@ -37,12 +41,26 @@ class SpeedRulesTest {
             }
     }
 
+    /**
+     * The code part of a line: everything before a `//` comment. A `//` inside a
+     * string literal, or right after a `:` (as in "https://"), is not a comment.
+     */
+    private fun codeOf(line: String): String {
+        var quoted = false
+        for (i in line.indices) {
+            val c = line[i]
+            if (c == '"' && (i == 0 || line[i - 1] != '\\') && !line.startsWith("'\"'", i - 1)) quoted = !quoted
+            if (!quoted && line.startsWith("//", i) && (i == 0 || line[i - 1] != ':')) return line.substring(0, i)
+        }
+        return line
+    }
+
     private fun breaks(pattern: Regex, allowed: Set<String> = emptySet(), only: (String) -> Boolean = { true }): List<String> =
         sources
             .filter { (path, _) -> only(path) && allowed.none { path.endsWith(it) } }
             .flatMap { (path, lines) ->
                 lines.mapIndexedNotNull { index, line ->
-                    val code = line.substringBefore("//").trim()
+                    val code = codeOf(line).trim()
                     val comment = code.startsWith("*") || code.startsWith("/*")
                     if (!comment && pattern.containsMatchIn(code)) "$path:${index + 1}: ${line.trim()}" else null
                 }
@@ -75,8 +93,8 @@ class SpeedRulesTest {
 
     @Test
     fun `nothing sleeps`() = assertNone(
-        "Thread.sleep holds a thread for nothing. Post a delayed runnable, or use delay() in a coroutine.",
-        breaks(Regex("""Thread\.sleep\(""")),
+        "Thread.sleep, SystemClock.sleep and TimeUnit.*.sleep hold a thread for nothing. Post a delayed runnable, or use delay() in a coroutine.",
+        breaks(Regex("""Thread\.sleep\(|SystemClock\.sleep\(|TimeUnit\.\w+\.sleep\(""")),
     )
 
     @Test
@@ -132,6 +150,49 @@ class SpeedRulesTest {
                 only = { path -> homeStart.any { path == it || path.startsWith(it) } },
             ),
         )
+    }
+
+    @Test
+    fun `every activity in the manifest keeps its orientation and screen size on a turn`() {
+        val manifest = File(src, "main/AndroidManifest.xml").readText().replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+        val tags = Regex("""<activity[\s>][^>]*>""").findAll(manifest).map { it.value }.toList()
+        assertTrue("The manifest declares activities to check", tags.isNotEmpty())
+        val bad = tags.filter { tag ->
+            val changes = Regex("""android:configChanges="([^"]*)"""").find(tag)?.groupValues?.get(1).orEmpty()
+            !(changes.contains("orientation") && changes.contains("screenSize"))
+        }
+        assertNone(
+            "Every <activity> in the manifest must declare android:configChanges with orientation and screenSize, so a turn does not restart it.",
+            bad,
+        )
+    }
+
+    @Test
+    fun `every activity attaches the screen window in onCreate`() {
+        val main = File(src, "main/kotlin/$PACKAGE_PATH")
+        val activityClass = Regex("""class\s+\w+[^{\n]*:\s*(\w+\.)?(Component)?Activity\(\)""")
+        val files = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        val activities = files.filter { activityClass.containsMatchIn(it.readText()) }
+        assertTrue("The main source has activities to check", activities.isNotEmpty())
+        val missing = activities
+            .filter { !it.readText().contains("ScreenWindow.attach(this)") }
+            .map { it.relativeTo(main).invariantSeparatorsPath }
+        assertNone("Every Activity must call ScreenWindow.attach(this) in onCreate.", missing)
+    }
+
+    @Test
+    fun `startActivity is called only from the files that may`() {
+        // Pages open notes, books and apps through the page opener. The rest start
+        // a screen of this app, a system panel or a link, none of them a note, book or app.
+        val allowed = setOf(
+            "ui/split/PageOpener.kt", "ui/split/SplitPane.kt", "ui/split/AdjacentApps.kt", "ui/split/BesideActivity.kt",
+            "ui/apps/AppsRepository.kt", "ui/settings/SettingsScreen.kt", "ui/common/WebLinks.kt",
+            "ui/devicetest/DeviceTestActivity.kt", "ui/home/Clock.kt", "ui/reading/epub/EpubReaderActivity.kt",
+        )
+        val callers = breaks(Regex("""startActivity\("""), only = { it.startsWith("ui/") })
+            .map { it.substringBefore(":") }
+            .toSet()
+        assertTrue("startActivity is allowed only in $allowed, but is also in: ${callers - allowed}", allowed.containsAll(callers))
     }
 
     @Test

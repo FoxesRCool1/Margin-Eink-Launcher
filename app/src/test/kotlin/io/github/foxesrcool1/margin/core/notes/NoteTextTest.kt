@@ -57,6 +57,11 @@ class NoteTextTest {
     }
 
     @Test
+    fun `a plain first line is the title even when a heading comes later`() {
+        assertEquals("Just a line", NoteText.titleFrom("Just a line\n# Later heading", "fallback"))
+    }
+
+    @Test
     fun `an empty note falls back to the file name`() {
         assertEquals("note-3", NoteText.titleFrom("", "note-3"))
         assertEquals("note-3", NoteText.titleFrom("  \n\n ", "note-3"))

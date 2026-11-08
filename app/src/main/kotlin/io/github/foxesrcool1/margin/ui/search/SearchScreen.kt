@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -27,6 +26,7 @@ import io.github.foxesrcool1.margin.core.search.SearchHit
 import io.github.foxesrcool1.margin.core.search.SearchKind
 import io.github.foxesrcool1.margin.core.search.SearchSource
 import io.github.foxesrcool1.margin.core.search.search
+import io.github.foxesrcool1.margin.core.search.withoutTitle
 import io.github.foxesrcool1.margin.core.speed.SpeedWatch
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.storage.StorageLayout
@@ -45,6 +45,9 @@ import io.github.foxesrcool1.margin.design.components.Plants
 import io.github.foxesrcool1.margin.design.components.einkFieldBorder
 import io.github.foxesrcool1.margin.design.icons.Lucide
 import io.github.foxesrcool1.margin.ui.common.ScreenScaffold
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -90,24 +93,44 @@ fun SearchScreen(
 
     // The search runs on the button and on the keyboard done key, not on every
     // key. The documents are read and the match is worked out off the main
-    // thread, and the time is kept to a budget.
+    // thread, and the time is kept to a budget. A new search cancels the one
+    // before it, so a slow older search does not overwrite a newer result.
+    // The running search, if any. A new search cancels the one before it, so a
+    // slow older search does not overwrite a newer result.
+    val running = remember { arrayOfNulls<Job>(1) }
     fun runSearch() {
         val words = state.query.trim()
         if (words.isEmpty()) return
         keyboard?.hide()
         focusManager.clearFocus()
-        scope.launch {
+        running[0]?.cancel()
+        running[0] = scope.launch {
             val started = android.os.SystemClock.uptimeMillis()
-            val found = withContext(AppDispatchers.io) {
-                search(SearchSource(data).documents(), words)
+            val hits: List<SearchHit> = try {
+                withContext(AppDispatchers.io) {
+                    search(SearchSource(data).documents(), words)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.e(TAG, "The search for $words failed", e)
+                if (coroutineContext.isActive) {
+                    state.hits = emptyList()
+                    state.searched = true
+                    state.status = "Search failed"
+                }
+                return@launch
             }
             SpeedWatch.check(
                 "The search for $words",
                 android.os.SystemClock.uptimeMillis() - started,
                 SpeedWatch.Budget.SEARCH,
             )
-            state.hits = found
-            state.searched = true
+            if (coroutineContext.isActive) {
+                state.hits = hits
+                state.searched = true
+                state.status = null
+            }
         }
     }
 
@@ -126,6 +149,7 @@ fun SearchScreen(
                 onValueChange = { state.query = it },
                 singleLine = true,
                 onSubmit = { runSearch() },
+                hint = "Search notes and books",
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focus)
@@ -144,20 +168,31 @@ fun SearchScreen(
         Spacer(modifier = Modifier.height(EinkDimens.targetGap))
 
         if (state.searched) {
-            PagedList(
-                items = state.hits,
-                pageSize = 5,
-                rowHeight = 74.dp,
-                emptyText = "Nothing found",
-                modifier = Modifier.weight(1f),
-            ) { _, hit ->
-                SearchRow(
-                    hit = hit,
-                    onOpen = {
-                        // The library list reads the disk, so the open is worked out off the main thread.
-                        scope.launch { openHit(hit, books, onOpenNote, onOpenInkNote, onOpenBook, onOpenJournal) }
-                    },
+            val status = state.status
+            if (status != null) {
+                EinkText(
+                    text = status,
+                    style = EinkType.help.copy(color = EinkColors.Faded),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
                 )
+            } else {
+                PagedList(
+                    items = state.hits,
+                    pageSize = 5,
+                    rowHeight = 74.dp,
+                    emptyText = "Nothing found",
+                    modifier = Modifier.weight(1f),
+                ) { _, hit ->
+                    SearchRow(
+                        hit = hit,
+                        onOpen = {
+                            // The library list reads the disk, so the open is worked out off the main thread.
+                            scope.launch { openHit(hit, books, onOpenNote, onOpenInkNote, onOpenBook, onOpenJournal) }
+                        },
+                    )
+                }
             }
         } else {
             Spacer(modifier = Modifier.weight(1f))
@@ -235,11 +270,14 @@ private fun SearchRow(
                     style = EinkType.capsSmall.copy(color = foreground),
                 )
             }
-            EinkText(
-                text = hit.snippet,
-                style = EinkType.help.copy(color = foreground),
-                maxLines = 2,
-            )
+            val snippet = withoutTitle(hit.snippet, hit.doc.title)
+            if (snippet.isNotEmpty()) {
+                EinkText(
+                    text = snippet,
+                    style = EinkType.help.copy(color = foreground),
+                    maxLines = 2,
+                )
+            }
         }
     }
     HairlineDivider(color = EinkColors.Faded)

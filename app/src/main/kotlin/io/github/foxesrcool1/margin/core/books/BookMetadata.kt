@@ -1,5 +1,6 @@
 package io.github.foxesrcool1.margin.core.books
 
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.Locale
 import java.util.zip.ZipInputStream
@@ -38,33 +39,45 @@ object EpubMetadata {
 
     /** Returns null when the file is not an EPUB this can read. */
     fun read(open: () -> InputStream?): BookMetadata? = runCatching {
-        val containerXml = readEntry(open, CONTAINER_PATH) ?: return null
+        // The caller promises only a stream, so a ZipFile (which needs a file
+        // to jump around in) is out. Two walks, each one stops at the entry it
+        // wants: first the container, which names the package document, then
+        // the package document itself. Nothing else in the zip is read, only
+        // skipped, and a big picture in the book can not spoil the read.
+        val containerXml = findEntry(open) { it.equals(CONTAINER_PATH, ignoreCase = true) } ?: return null
         val packagePath = packagePathFrom(parse(containerXml) ?: return null) ?: return null
-        val packageXml = readEntry(open, packagePath) ?: return null
+        val wanted = listOf(decodePath(packagePath), packagePath)
+        val packageXml = findEntry(open) { name -> wanted.any { name.equals(it, ignoreCase = true) } } ?: return null
         metadataFrom(parse(packageXml) ?: return null)
     }.getOrNull()
 
-    /** Pulls one entry out of the zip by name. */
-    private fun readEntry(open: () -> InputStream?, name: String): ByteArray? {
+    /** Walks the zip and returns the bytes of the first file whose name [matches], or null. */
+    private fun findEntry(open: () -> InputStream?, matches: (String) -> Boolean): ByteArray? {
         val stream = open() ?: return null
-        stream.use { raw ->
-            ZipInputStream(raw.buffered()).use { zip ->
-                var entry = zip.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && entry.name.equals(name, ignoreCase = true)) {
-                        val bytes = zip.readBytes()
-                        return if (bytes.size > MAX_XML_BYTES) {
-                            bytes.copyOf(MAX_XML_BYTES)
-                        } else {
-                            bytes
-                        }
-                    }
-                    zip.closeEntry()
-                    entry = zip.nextEntry
-                }
+        ZipInputStream(stream.buffered()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory && matches(entry.name)) return readBounded(zip)
+                entry = zip.nextEntry
             }
         }
         return null
+    }
+
+    /**
+     * Reads the current zip entry, but never more than the cap. An entry over
+     * the cap is unreadable, the same as a missing one, and it is never held
+     * in memory whole.
+     */
+    private fun readBounded(zip: ZipInputStream): ByteArray? {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (out.size() <= MAX_XML_BYTES) {
+            val read = zip.read(buffer, 0, minOf(buffer.size, MAX_XML_BYTES + 1 - out.size()))
+            if (read < 0) break
+            out.write(buffer, 0, read)
+        }
+        return if (out.size() > MAX_XML_BYTES) null else out.toByteArray()
     }
 
     /**
@@ -97,12 +110,43 @@ object EpubMetadata {
         factory.newDocumentBuilder().parse(bytes.inputStream())
     }.getOrNull()
 
-    /** True when the document has a doctype anywhere in it, in any of the encodings an EPUB may use. */
+    /**
+     * True when the document has a doctype, in any of the encodings an EPUB
+     * may use. Only the prolog is looked at, because XML allows a doctype
+     * only before the root element, and a doctype inside a comment is not a
+     * doctype at all.
+     */
     private fun declaresDoctype(bytes: ByteArray): Boolean {
-        val marker = "<!DOCTYPE"
-        return listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE).any { charset ->
-            String(bytes, charset).contains(marker, ignoreCase = true)
+        val charsets = listOf(Charsets.UTF_8, Charsets.UTF_16LE, Charsets.UTF_16BE)
+        return charsets.any { charset -> prologHasDoctype(bytes.toString(charset)) }
+    }
+
+    /**
+     * Scans the prolog: whitespace, a byte order mark, processing
+     * instructions and comments, and stops at the first thing that is none of
+     * those. A doctype is only a doctype in that place, and a comment may
+     * legally hold the text of one.
+     */
+    private fun prologHasDoctype(text: String): Boolean {
+        var i = 0
+        while (i < text.length) {
+            when {
+                text[i].isWhitespace() || text[i] == Char(0xFEFF) -> i++
+                text.startsWith("<?", i) -> {
+                    val end = text.indexOf("?>", i + 2)
+                    if (end < 0) return false
+                    i = end + 2
+                }
+                text.startsWith("<!--", i) -> {
+                    val end = text.indexOf("-->", i + 4)
+                    if (end < 0) return false
+                    i = end + 3
+                }
+                text.startsWith("<!DOCTYPE", i, ignoreCase = true) -> return true
+                else -> return false
+            }
         }
+        return false
     }
 
     private fun packagePathFrom(container: Document): String? {
@@ -114,6 +158,25 @@ object EpubMetadata {
         }
         return null
     }
+
+    /**
+     * A full-path may be percent escaped ("OEBPS/my%20book.opf") and may
+     * start with "./". Decode the escapes and strip the prefix; the reader
+     * falls back to the raw name when the decoded one is not in the zip.
+     *
+     * URLDecoder is not used because it turns "+" into a space, and a file
+     * name may contain a real plus. Only %XX sequences are decoded.
+     */
+    private fun decodePath(path: String): String {
+        val decoded = path.replace(HEX_ESCAPE) { match ->
+            val bytes = match.value.chunked(3).map { it.substring(1).toInt(16).toByte() }.toByteArray()
+            String(bytes, Charsets.UTF_8)
+        }
+        return decoded.trimStart('/').removePrefix("./")
+    }
+
+    /** Runs of percent escapes, so a multi byte character decodes as one. */
+    private val HEX_ESCAPE = Regex("(?:%[0-9A-Fa-f]{2})+")
 
     private fun metadataFrom(packageDocument: Document): BookMetadata? {
         val title = firstText(packageDocument, "dc:title", "title") ?: return null

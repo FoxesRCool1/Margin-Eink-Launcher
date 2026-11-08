@@ -30,7 +30,38 @@ private val release = ReleaseInfo(
     assets = listOf(asset),
 )
 
+private val longNotes = ReleaseInfo(
+    tag = "v0.3.0",
+    version = AppVersion(0, 3, 0),
+    title = "Margin v0.3.0",
+    notes = (1..14).joinToString("\n") { "- Change number $it, with a short note on what it does." },
+    prerelease = true,
+    assets = listOf(asset),
+)
+
 class UpdateStringsTest {
+
+    @Test
+    fun `release notes are cut into pages and no line is lost`() {
+        val lines = (1..20).map { "line $it" }
+        val pages = notePages(lines, 9, 1000)
+        assertEquals(listOf(9, 9, 2), pages.map { it.size })
+        assertEquals(lines, pages.flatten())
+        assertEquals(emptyList<List<String>>(), notePages(emptyList(), 9, 1000))
+    }
+
+    @Test
+    fun `a long line takes the rows it wraps onto`() {
+        // 100 characters at 40 per row is 3 rows, so it shares a 4-row page with one more row only.
+        val pages = notePages(listOf("x".repeat(100), "a", "b"), 4, 40)
+        assertEquals(listOf(2, 1), pages.map { it.size })
+    }
+
+    @Test
+    fun `an exact multiple fills whole pages`() {
+        val pages = notePages((1..18).map { "line $it" }, 9, 1000)
+        assertEquals(listOf(9, 9), pages.map { it.size })
+    }
 
     @Test
     fun `notes lose their Markdown marks, the repeated version, and a wrapped bullet is one line again`() {
@@ -123,5 +154,37 @@ class UpdateScreenshotTest {
             note = "Signed with a different key. (INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match)",
         ),
         "update_install_failed",
+    )
+
+    @Test
+    @Config(qualifiers = "sw480dp-w640dp-h480dp-land-xxhdpi")
+    fun availableLongNotesLand() = shoot(UpdateState.Available(longNotes, asset), "update_available_long_notes_land")
+
+    @Test
+    @Config(qualifiers = "sw480dp-w640dp-h480dp-land-xxhdpi")
+    fun installFailedLand() = shoot(
+        UpdateState.Ready(
+            release,
+            File("x.apk"),
+            handedOver = true,
+            note = "Signed with a different key. (INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match)",
+        ),
+        "update_install_failed_land",
+    )
+
+    @Test
+    @Config(qualifiers = "sw320dp-w320dp-h640dp-port-xxhdpi")
+    fun splitAvailableLongNotes() = shoot(UpdateState.Available(longNotes, asset), "split_update_available_long_notes")
+
+    @Test
+    @Config(qualifiers = "sw320dp-w320dp-h640dp-port-xxhdpi")
+    fun splitInstallFailed() = shoot(
+        UpdateState.Ready(
+            release,
+            File("x.apk"),
+            handedOver = true,
+            note = "Signed with a different key. (INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match)",
+        ),
+        "split_update_install_failed",
     )
 }

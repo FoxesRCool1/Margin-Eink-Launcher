@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import io.github.foxesrcool1.margin.core.books.LibraryBook
 import io.github.foxesrcool1.margin.core.log.AppLog
@@ -31,6 +32,7 @@ import io.github.foxesrcool1.margin.core.routine.RoutineItem
 import io.github.foxesrcool1.margin.core.routine.RoutineRepository
 import io.github.foxesrcool1.margin.core.routine.RoutineStatus
 import io.github.foxesrcool1.margin.core.settings.SettingsStore
+import io.github.foxesrcool1.margin.core.speed.SpeedWatch
 import io.github.foxesrcool1.margin.core.storage.DataRepository
 import io.github.foxesrcool1.margin.core.storage.DataRoot
 import io.github.foxesrcool1.margin.core.threads.AppDispatchers
@@ -38,6 +40,7 @@ import io.github.foxesrcool1.margin.core.window.ScreenWindow
 import io.github.foxesrcool1.margin.core.window.findActivity
 import io.github.foxesrcool1.margin.design.EinkTheme
 import io.github.foxesrcool1.margin.ui.apps.AppsScreen
+import io.github.foxesrcool1.margin.ui.apps.LauncherEntry
 import io.github.foxesrcool1.margin.ui.home.ContinueFinder
 import io.github.foxesrcool1.margin.ui.home.ContinueTarget
 import io.github.foxesrcool1.margin.ui.home.LauncherRoute
@@ -69,6 +72,7 @@ import io.github.foxesrcool1.margin.ui.split.openBookBeside
 import io.github.foxesrcool1.margin.ui.split.rememberPageOpener
 import io.github.foxesrcool1.margin.ui.split.watchAndroidSplit
 import io.github.foxesrcool1.margin.ui.update.UpdateScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -104,6 +108,9 @@ class HomeActivity : ComponentActivity() {
     private var newNoteWanted = false
 
     private var startLogged = false
+
+    /** True while a quick note or a quick handwritten page is being made, so a second tap is ignored. */
+    private var quickPending = false
 
     /** When the last change of tab was asked for, for its time budget. */
     private var routeChangedAt = 0L
@@ -149,10 +156,11 @@ class HomeActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val createdAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate(savedInstanceState)
         AppLog.i(TAG, "onCreate")
         ScreenWindow.attach(this)
-        logStartTime()
+        logStartTime(createdAt)
         paneInk = PaneInk(this, lifecycleScope)
         watchAndroidSplit(split)
 
@@ -267,18 +275,26 @@ class HomeActivity : ComponentActivity() {
     }
 
     /**
-     * How long the home screen took, from the start of the process to the
-     * first frame. There is no profiler on this tablet, so the log is where
-     * a slow start shows up. Step 10 asks for this number.
+     * How long the home screen took, to the first frame. When Home was the
+     * first activity of the process, that is from the process start. When a
+     * reader or another screen came first, it is from the start of this
+     * activity. There is no profiler on this tablet, so the log is where a
+     * slow start shows up. Step 10 asks for this number.
      */
-    private fun logStartTime() {
+    private fun logStartTime(createdAt: Long) {
         if (startLogged) return
         startLogged = true
         window.decorView.post {
-            val sinceProcessStart = android.os.SystemClock.elapsedRealtime() -
-                android.os.Process.getStartElapsedRealtime()
-            AppLog.i(TAG, "Home screen up $sinceProcessStart ms after the process started")
-            io.github.foxesrcool1.margin.core.speed.SpeedWatch.coldStart(sinceProcessStart)
+            val now = android.os.SystemClock.elapsedRealtime()
+            val sinceProcessStart = now - android.os.Process.getStartElapsedRealtime()
+            if (SpeedWatch.homeStartedProcess(SpeedWatch.firstActivity, HomeActivity::class.java.name)) {
+                AppLog.i(TAG, "Home screen up $sinceProcessStart ms after the process started")
+                SpeedWatch.coldStart(sinceProcessStart)
+            } else {
+                val sinceCreate = now - createdAt
+                AppLog.i(TAG, "Home screen up $sinceCreate ms after it was created")
+                SpeedWatch.check("The start of Home", sinceCreate, SpeedWatch.Budget.COLD_START)
+            }
         }
     }
 
@@ -316,36 +332,54 @@ class HomeActivity : ComponentActivity() {
      * made with, so it can delete the file again when the user types nothing.
      */
     private fun quickNote() {
-        val notes = NotesRepository(DataRoot.repository(this))
-        kotlin.concurrent.thread(name = "eink-quick-note", isDaemon = true) {
-            val folder = notes.quickNotePath()
-            val stamp = io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
-            val path = runCatching { notes.createNote(folder, stamp) }.getOrNull()
-            val madeWith = path?.let { runCatching { notes.read(it) }.getOrNull() }
-            runOnUiThread {
-                if (path != null) {
-                    opener.openTypedNote(path, madeWith)
-                } else {
-                    AppLog.e(TAG, "Could not make a quick note")
+        if (quickPending) return
+        quickPending = true
+        lifecycleScope.launch(AppDispatchers.io) {
+            try {
+                val notes = NotesRepository(DataRoot.repository(this@HomeActivity))
+                val folder = notes.quickNotePath()
+                val stamp = io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
+                val path = runCatching { notes.createNote(folder, stamp) }.getOrNull()
+                val madeWith = path?.let { runCatching { notes.read(it) }.getOrNull() }
+                withContext(Dispatchers.Main) {
+                    if (!this@HomeActivity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                        // The user left Home: do not leave an empty note behind.
+                        if (path != null) launch(AppDispatchers.io) { notes.delete(path) }
+                        return@withContext
+                    }
+                    if (path != null) {
+                        opener.openTypedNote(path, madeWith)
+                    } else {
+                        AppLog.e(TAG, "Could not make a quick note")
+                    }
                 }
+            } finally {
+                withContext(Dispatchers.Main) { quickPending = false }
             }
         }
     }
 
     private fun quickInkNote() {
-        val data = DataRoot.repository(this)
-        kotlin.concurrent.thread(name = "eink-quick-ink", isDaemon = true) {
-            val name = "Handwritten " + io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
-            val path = runCatching {
-                io.github.foxesrcool1.margin.core.ink.InkNotesRepository(data)
-                    .freshPath(NotesRepository(data).quickNotePath(), name)
-            }.getOrNull()
-            runOnUiThread {
-                if (path != null) {
-                    opener.openInkNote(path, name)
-                } else {
-                    AppLog.e(TAG, "Could not make a quick handwritten page")
+        if (quickPending) return
+        quickPending = true
+        lifecycleScope.launch(AppDispatchers.io) {
+            try {
+                val data = DataRoot.repository(this@HomeActivity)
+                val name = "Handwritten " + io.github.foxesrcool1.margin.core.notes.timestampedNoteName()
+                val path = runCatching {
+                    io.github.foxesrcool1.margin.core.ink.InkNotesRepository(data)
+                        .freshPath(NotesRepository(data).quickNotePath(), name)
+                }.getOrNull()
+                withContext(Dispatchers.Main) {
+                    if (!this@HomeActivity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@withContext
+                    if (path != null) {
+                        opener.openInkNote(path, name)
+                    } else {
+                        AppLog.e(TAG, "Could not make a quick handwritten page")
+                    }
                 }
+            } finally {
+                withContext(Dispatchers.Main) { quickPending = false }
             }
         }
     }
@@ -512,7 +546,7 @@ private fun LauncherHost(
                 val component = item.appComponent()
                 when {
                     tab != null -> onRoute(tab)
-                    component != null -> startApp(context, component.first, component.second)
+                    component != null -> opener.openApp(LauncherEntry(component.first, component.second, item.label))
                     // An item with nothing to open is just something to tick
                     // off, so its button marks it done and moves to the next one.
                     else -> scope.launch {
@@ -601,15 +635,4 @@ private fun nextRoutine(data: DataRepository, tickOff: String? = null): RoutineS
     val routine = RoutineRepository(data)
     if (tickOff != null) routine.toggle(tickOff, today)
     return routine.next(today, now.toLocalTime(), hour)
-}
-
-/** Starts another app from a routine item. */
-private fun startApp(context: android.content.Context, packageName: String, className: String) {
-    runCatching {
-        val intent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setClassName(packageName, className)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-    }.onFailure { AppLog.e(TAG, "Could not start $packageName from the routine", it) }
 }
